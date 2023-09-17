@@ -1,0 +1,34 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "无参数运行",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/cmake-build-debug/${fileBasenameNoExtension}",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
+        },
+        {
+            "name": "extractAudio",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/cmake-build-debug/${fileBasenameNoExtension}",
+            "args": ["test.mp4","test.aac"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/cmake-build-debug",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
+        }
+
+
+    ]
+}

@@ -1,0 +1,30 @@
+{
+    "tasks": [
+        {
+            "type": "cppbuild",
+            "label": "ffmpeg_app_build",
+            "command": "/usr/bin/clang++",
+            "args": [
+                "-fcolor-diagnostics",
+                "-fansi-escape-codes",
+                "-g",
+                "${file}",
+                "-o",
+                "${workspaceFolder}/cmake-build-debug/${fileBasenameNoExtension}",
+                "`pkg-config --cflags --libs libavutil libavformat`"
+            ],
+            "options": {
+                "cwd": "${fileDirname}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "detail": "编译器: /usr/bin/clang++"
+        }
+    ],
+    "version": "2.0.0"
+}
