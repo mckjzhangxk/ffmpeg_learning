@@ -1,0 +1,18 @@
+version: "3"
+services:
+    myrtmp:
+        image: myrtmp:1.0
+        container_name: myrtmpc
+        logging:
+          options:
+            max-file: "3"
+            max-size: 400m
+        # network_mode: host
+        ports:
+         - "8080:8080"
+         - "1935:1935"
+        privileged: true
+        restart: always
+        volumes:
+            - /tmp/hls:/tmp/hls
+            - /tmp/dash:/tmp/dash

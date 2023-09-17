@@ -1,0 +1,1 @@
+docker build -t myrtmp:1.0 .
