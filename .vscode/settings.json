@@ -1,0 +1,7 @@
+{
+    "cmake.sourceDirectory": "${workspaceFolder}/code",
+    "files.associations": {
+        "algorithm": "c",
+        "gl3.h": "c"
+    }
+}
