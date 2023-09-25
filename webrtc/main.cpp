@@ -1,6 +1,8 @@
 #include <iostream>
-
+#include "basic/Server.h"
 int main() {
-    std::cout << "Hello, World!" << std::endl;
+    rtcbase::Server* server=new rtcbase::Server();
+
+    server->Run();
     return 0;
 }

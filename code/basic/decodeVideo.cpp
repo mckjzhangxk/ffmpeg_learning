@@ -191,7 +191,7 @@ int main(int argc,char* argv[]) {
 
     ////////////////////////////创建解码器上下文////////////////////////////
     AVCodec *p_codecs = avcodec_find_decoder(ctx->streams[videoIndex]->codec->codec_id);
-
+    p_codecs=avcodec_find_decoder(AV_CODEC_ID_HEVC);
     AVCodecContext *avCodecContext = avcodec_alloc_context3(p_codecs);
 
     ////////////////////////////编码器参数设置////////////////////////////

@@ -44,6 +44,7 @@ add_executable(remuxing-h264 basic/remux/remuxing-h264.cpp)
 add_executable(remuxing-from-memory basic/remux/remuxing-from-memory.cpp)
 add_executable(extractAudio basic/remux/extractAudio.cpp)
 add_executable(extractVideo basic/remux/utils.c basic/remux/extractVideo.c)
+add_executable(cutVideo basic/remux/cutVideo.cpp)
 
 #设备的操作
 add_executable(device_open device/opendevice.cpp)
@@ -89,6 +90,7 @@ target_link_libraries(remuxing-h264  ${FFMPEG_LIBRARIES})
 target_link_libraries(remuxing-from-memory  ${FFMPEG_LIBRARIES})
 target_link_libraries(extractAudio  ${FFMPEG_LIBRARIES})
 target_link_libraries(extractVideo  ${FFMPEG_LIBRARIES})
+target_link_libraries(cutVideo  ${FFMPEG_LIBRARIES})
 
 #设备的操作
 target_link_libraries(device_open   ${FFMPEG_LIBRARIES})

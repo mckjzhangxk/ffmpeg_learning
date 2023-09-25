@@ -236,7 +236,9 @@ typedef struct _VideoStream{
     AVCodecContext *video_decoder;
     AVCodecContext *audio_decoder;
 
-    double video_stream_time_base;
+
+    long long start_time_ms;
+    AVRational stream_time_base;
 }VideoStream;
 //从FIFO中解出尽可能不超过data_size的音频数据，并返回实际的音频数据大小
 //返回 -1 表示解码失败
@@ -326,8 +328,8 @@ int remux_thread (void *argv){
     av_dump_format(fmtCtx,0,is->infile,0);
     //5. 根据流中的codec_id, 获得解码器
     AVStream *v_inStream = fmtCtx->streams[v_idx];
-    is->video_stream_time_base= av_q2d(v_inStream->time_base);
 
+    is->stream_time_base=v_inStream->time_base;
     const AVCodec *v_dec = avcodec_find_decoder(v_inStream->codecpar->codec_id);
     if(!v_dec){
         av_log(NULL, AV_LOG_ERROR, "Could not find video Codec");
@@ -391,6 +393,11 @@ int remux_thread (void *argv){
     SDL_PushEvent(&e);
 
 
+    // 计算从某个点开始的时间戳（以毫秒为单位）
+    struct timespec start_time;
+    clock_gettime(CLOCK_MONOTONIC,&start_time);
+    is->start_time_ms = start_time.tv_sec * 1000000LL + start_time.tv_nsec / 1000LL;
+
     AVPacket pkt;
 
     while (!*quit && av_read_frame(fmtCtx, &pkt) >= 0){
@@ -444,12 +451,26 @@ int video_decode_thread (void *argv){
                 break;
             }
             //这里控制帧率
-            double current_time=frame->pts*is->video_stream_time_base;
 
+            int pts=frame->pts;
+//            av_frame_get_best_effort_timestamp(frame);
             AVFrame *new_frame=av_frame_alloc();
             av_frame_move_ref(new_frame,frame);
             is->frame_queue->enqueue(new_frame);
-            av_usleep(1e6/ av_q2d(is->video_decoder->framerate));
+            //开始播放了，这几计算需要的延迟
+            AVRational base_time={1,1e6};
+            int64_t frame_pts=av_rescale_q_rnd(pts,is->stream_time_base,base_time,static_cast<AVRounding>(AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX));
+
+            struct timespec current_time;
+            clock_gettime(CLOCK_MONOTONIC, &current_time);
+            // 以系统时间戳system_pts为基准，如果packet的时间戳 晚于system_pts，等待 一定时间后再发生
+            long long current_timestamp_ms = current_time.tv_sec * 1000000LL + current_time.tv_nsec / 1000LL;
+            long long system_pts=current_timestamp_ms-is->start_time_ms;
+            if (frame_pts>system_pts){
+                av_usleep((frame_pts-system_pts));
+            }
+
+
 
             e.type=VIDEO_NEW_FRAME;
             SDL_PushEvent(&e);
@@ -549,6 +570,9 @@ int main(int  argc,char *argv[]){
     is.frame_queue=&frame_queue;
     is.infile=argv[1];
 
+
+
+
     //解复用的线程，需要输入文件名
     //解复用之后把数据包放入音频和视频队列中
     void* remux_thread_args[]={&quit,&is};
@@ -565,6 +589,8 @@ int main(int  argc,char *argv[]){
         SDL_Event event;
         SDL_WaitEvent(&event);
         AVFrame * frame=NULL;
+
+
         int ii,jj,cnt;
         switch(event.type) {
             case SDL_QUIT: //需要通知子线程退出
@@ -583,7 +609,6 @@ int main(int  argc,char *argv[]){
                                             SDL_TEXTUREACCESS_STREAMING,
                                             is.video_decoder->width,
                                             is.video_decoder->height);
-
                 break;
             case VIDEO_NEW_FRAME:
                 if (!texture){
@@ -591,9 +616,6 @@ int main(int  argc,char *argv[]){
                 }
 
                 while (frame=is.frame_queue->dequeue(0)){
-
-
-
 
                 SDL_UpdateYUVTexture(texture,
                                      NULL,
@@ -604,10 +626,10 @@ int main(int  argc,char *argv[]){
 
 
                 SDL_RenderClear(renderer);
-                SDL_RenderCopy(renderer, texture, NULL, NULL);
+//                SDL_RenderCopy(renderer, texture, NULL, NULL);
 //                SDL_RenderPresent(renderer);
 
-                 cnt=3;
+                 cnt=2;
                 for ( ii = 0; ii < cnt; ++ii) {
                     for ( jj = 0; jj < cnt; ++jj) {
                         SDL_Rect screen_rect;

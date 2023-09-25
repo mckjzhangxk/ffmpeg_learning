@@ -393,6 +393,7 @@ int packageView(const char * infile){
 
     AVPacket pkt;
 
+    int pos=0;
     while (1) {
         av_init_packet(&pkt);
 
@@ -409,11 +410,16 @@ int packageView(const char * infile){
             key='Y';
         }
 
-        printf("Packet PTS %10s,DPT %10s,时长 %10s,  %c  大小 %d,\n"
-                , av_ts2timestr(pkt.pts,time_base)
-                , av_ts2timestr(pkt.dts,time_base)
-                , av_ts2timestr(pkt.duration,time_base),key,pkt.size);
-
+//        printf("Pos %3d Packet PTS %10s,DPT %10s,时长 %10s,  %c  大小 %d,\n"
+//                ,pos++
+//                , av_ts2timestr(pkt.pts,time_base)
+//                , av_ts2timestr(pkt.dts,time_base)
+//                , av_ts2timestr(pkt.duration,time_base),key,pkt.size);
+        printf("Pos %3d Packet PTS %10d,DPT %10d,时长 %10d,  %c  大小 %d,\n"
+                ,pos++
+                , (pkt.pts)
+                , (pkt.dts)
+                , (pkt.duration),key,pkt.size);
         cnt++;
 //        int ret=decode(decoder_ctx,frame,&pkt);
 //        if (ret<0){
@@ -550,7 +556,7 @@ int main(){
 
 
 //    packageView("/Users/zhanggxk/Desktop/error/39671f8ce7910af5d3faa5c0f073ce26-1.avi");
-    packageView("test1.h264");
+    packageView("/Users/zhanggxk/Desktop/测试视频/dahua.h264");
     std::vector<AVFrame *> all_frames;
     for(const std::string& f:filenames){
         std::string target=dest+"/"+f;
