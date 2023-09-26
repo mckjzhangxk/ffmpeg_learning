@@ -6,14 +6,179 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
-#define PORT 8888
-#define FD_SIZE 1024
+
+#define FD_SIZE 2
 #define MESSAGE_SIZE 1024
 
 
-void set_fd_noblock(int fd){
-    int flag=fcntl(fd,F_GETFD);
-    fcntl(fd,F_SETFD,flag|O_NONBLOCK);
+void set_fd_noblock(int fd) {
+    int flag = fcntl(fd, F_GETFD);
+    fcntl(fd, F_SETFD, flag | O_NONBLOCK);
+}
+
+int open_listen_fd(int port) {
+
+    //////////////////////////////创建套接字///////////////////////////
+    //1.创建套接字
+    int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (socket_fd == -1) {
+        perror("create socket error");
+        exit(1);
+    }
+
+    //1-2.设置套接字参数
+    //SO_REUSEADDR表示启动的时候，不用等待WAIT_TIME，可以直接启动。
+    //问题是为什么需要等待WAIT_TIME？
+    int on = 1;
+    int ret = setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+    if (ret == -1) {
+        perror("setsockopt error");
+        exit(1);
+    }
+
+    //设置 套接字为非阻塞 NONBLOCK
+    set_fd_noblock(socket_fd);
+
+    //////////////////////////////绑定套接字///////////////////////////
+    //绑定的意思我理解为 让这个文件描述socket_fd 符和操作系统的 ip,port产生关联.
+
+    //set local address
+    struct sockaddr_in local_addr;
+    local_addr.sin_family = AF_INET;
+    local_addr.sin_port = htons(port);
+    local_addr.sin_addr.s_addr = INADDR_ANY;//0.0.0.0
+    bzero(&(local_addr.sin_zero), 8);
+
+    //bind socket
+    //sockaddr与sockaddr_in是完全等价的，sockaddr_in是针对程序员类型，sockaddr是函数使用的类型
+    ret = bind(socket_fd, (struct sockaddr *) &local_addr, sizeof(struct sockaddr_in));
+    if (ret == -1) {
+        perror("bind error");
+        exit(1);
+    }
+    //////////////////////////////监听套接字///////////////////////////
+    int backlog = 10; //并发缓冲区大小，可以理解为并发量
+    ret = listen(socket_fd, backlog);
+    if (ret == -1) {
+        perror("listen error");
+        exit(1);
+    }
+    return socket_fd;
+}
+
+//读取客户端消息，然后马上会写到客户端
+int echo(int accept_fd) {
+    char in_buf[MESSAGE_SIZE];
+    memset(in_buf, 0, MESSAGE_SIZE);
+    int ret = recv(accept_fd, &in_buf, MESSAGE_SIZE, 0);
+    if (ret == 0) {
+        printf("客户端[%d]退出\n", accept_fd);
+        return -1;
+    }
+    printf("receive message:%s\n", in_buf);
+    send(accept_fd, (void *) in_buf, MESSAGE_SIZE, 0);
+    return 0;
+}
+
+
+struct IO_Set {
+    fd_set fd_ready_sets; //这里是给select使用，让select去修改
+    fd_set fd_sets;  //这里是新增 与删除使用的set
+
+    int nReady;  //多少fd准备好，至少有1个字节的数据
+
+    int max_pos;  //accept_fds中最大有效位置
+    int max_fd;
+
+    int server_fd;
+    int client_fds[FD_SIZE];
+    int client_num;
+
+};
+
+void init_io_set(IO_Set &ioSet, int listenFd) {
+
+    FD_ZERO(&ioSet.fd_sets);
+    FD_SET(listenFd, &ioSet.fd_sets);
+
+    ioSet.server_fd = ioSet.max_fd = listenFd;
+    ioSet.max_pos = -1;
+
+    for (int i = 0; i < FD_SIZE; ++i) {
+        ioSet.client_fds[i] = -1;
+    }
+    ioSet.client_num = 0;
+}
+
+int add_client(IO_Set &ioSet, int clientFd) {
+    printf("新的客户端 %d\n", clientFd);
+    ioSet.nReady--;
+    for (int i = 0; i < FD_SIZE; ++i) {
+        if (ioSet.client_fds[i] == -1) {
+            //描述符集 更新
+            ioSet.client_fds[i] = clientFd;
+            if (i > ioSet.max_pos) {
+                ioSet.max_pos = i;
+            }
+            //监听集 更新
+            FD_SET(clientFd, &ioSet.fd_sets);
+            if (clientFd > ioSet.max_fd) {
+                ioSet.max_fd = clientFd;
+            }
+
+            ioSet.client_num++;
+            return 0;
+        }
+    }
+    printf("无法服务更多客户端,当前 %d个客户端 \n", ioSet.client_num);
+    return -1;
+
+}
+
+//可以理解成处理请求，删除断开的客户端
+void check_clients(IO_Set &ioSet) {
+    //记录被移出的clientfd的最大数值 与最大位置
+    int max_pos = -1;
+    int max_fd = -1;
+
+    for (int i = 0; (i <= ioSet.max_pos) && (ioSet.nReady); ++i) {
+        int clientfd = ioSet.client_fds[i];
+
+        if (clientfd != -1 && FD_ISSET(clientfd, &ioSet.fd_ready_sets)) {
+            ioSet.nReady--;
+
+            int result = echo(clientfd);
+            //说明客户端关闭
+            if (result < 0) {
+                close(clientfd);
+                //描述符集 移除
+                ioSet.client_fds[i] = -1;
+                max_pos = i;
+
+                //监听集 移除
+                FD_CLR(clientfd, &ioSet.fd_sets);
+                if (max_fd < clientfd) {
+                    max_fd = clientfd;
+                }
+
+                ioSet.client_num--;
+            }
+        }
+    }
+    //如果移除的是最后一个描述符
+    if (max_pos == ioSet.max_pos) {
+        ioSet.max_pos = ioSet.max_pos - 1;
+    }
+    //如果移除的是最大的描述符
+    if (max_fd == ioSet.max_fd) {
+        ioSet.max_fd = ioSet.server_fd;
+        for (int i = 0; i <= ioSet.max_pos; ++i) {
+            int clientfd = ioSet.client_fds[i];
+            if (ioSet.max_fd < clientfd) {
+                ioSet.max_fd = clientfd;
+            }
+        }
+    }
 }
 //使用select API,以异步IO多路复用的方式 实现的服务器。
 //异步IO是建立在【事件触发机制】 对IO进行处理。
@@ -32,116 +197,43 @@ void set_fd_noblock(int fd){
 //FD_ZERO,FD_SET,FD_ISSET
 //fcntl -用于设置socket为非阻塞
 //select
-int main(){
-    //套接字的创建与地址重用
-    int flags = 1; //open REUSEADDR option
-    int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
-    int ret = setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &flags, sizeof(flags));
+int main() {
+    int socket_fd = open_listen_fd(8888);
 
 
-    //设置 套接字为非阻塞 NONBLOCK
-    set_fd_noblock(socket_fd);
+    IO_Set ioSet;
+    init_io_set(ioSet, socket_fd);
 
 
-    //绑定与监听，监听是tcp采用，用于维护与客户端connect??
-    struct sockaddr_in local_addr;
-    local_addr.sin_family = AF_INET;
-    local_addr.sin_port = htons(PORT);
-    local_addr.sin_addr.s_addr = INADDR_ANY;
-    bzero(&(local_addr.sin_zero), 8);
-
-    //bind socket
-    ret = bind(socket_fd, (struct sockaddr *)&local_addr, sizeof(struct sockaddr_in));
-    int backlog = 10;
-    ret = listen(socket_fd, backlog);
-    if (ret<0){
-        printf("监听失败");
-        return -1;
-    }
-
-    int accept_fds[FD_SIZE] = {-1, };
-    for (int i = 0; i < FD_SIZE; ++i) {
-        accept_fds[i]=-1;
-    }
-
-    fd_set fd_sets;
+    struct sockaddr_in remote_addr;
+    socklen_t remote_addr_len = sizeof(struct sockaddr_in);
     while (true) {
 
-        ////////////////重新设置要复用的文件描述符///////////////
-        FD_ZERO(&fd_sets); //清空sets
-        FD_SET(socket_fd, &fd_sets); //将socket_fd 添加到sets
-        int max_fd = socket_fd;//每次都重新设置 max_fd
-
-        int client_num=0;
-        for(int k=0; k < FD_SIZE; k++){
-            if (accept_fds[k]==-1)
-                continue;
-            if(accept_fds[k] > max_fd){
-                    max_fd = accept_fds[k];
-            }
-            //继续向sets添加fd
-            FD_SET(accept_fds[k],&fd_sets);
-            client_num++;
-        }
+        ////////////////设置监听的IO集///////////////
+        ioSet.fd_ready_sets = ioSet.fd_sets;
+        printf("最大fd %d,客户端数 %d\n", ioSet.max_fd, ioSet.client_num);
         //////////////////////////////////////////////////////
-
-        printf("最大fd %d,客户端数 %d\n",max_fd,client_num);
-        //遍历所有的fd
-        int events = select( max_fd + 1, &fd_sets, NULL, NULL, NULL );
-        if(events < 0) {
-            perror("select");
+        ioSet.nReady = select(ioSet.max_fd + 1, &ioSet.fd_ready_sets, NULL, NULL, 0);
+        if (ioSet.nReady < 0) {
+            perror("select error");
             break;
-        }else if(events == 0){
+        } else if (ioSet.nReady == 0) {
             printf("select time out ......");
             continue;
-        }else if( events ){
-            printf("events:%d\n", events);
-
-            // 如果是监听的socket事件,表示 来的是新连接
-            if( FD_ISSET(socket_fd, &fd_sets)){
-                unsigned int addr_len = sizeof( struct sockaddr_in );
-                struct sockaddr_in  remote_addr;
-                int accept_fd = accept(socket_fd, (struct sockaddr *)&remote_addr, &addr_len); //创建一个新连接的fd
-                if (accept_fd<0){
-                    continue;
-                }
-                printf("新的客户端 %d\n",accept_fd);
-
-                ////////////超找出空槽来接收///////////////////////
-                int curpos = -1;
-                for( int a; a < FD_SIZE; a++){
-                    if(accept_fds[a] == -1){
-                        curpos = a;
-                        break;
-                    }
-                }
-                if(curpos==-1){
-                    printf("无法处理更多连接 !\n");
-                    close(accept_fd);
-                    continue;
-                }
-                ///////////////////////////////////
-
+        } else {
+            //客户端新连接
+            if (FD_ISSET(socket_fd, &ioSet.fd_ready_sets)) {
+                remote_addr_len = sizeof(struct sockaddr_in);
+                int accept_fd = accept(socket_fd, (struct sockaddr *) &remote_addr, &remote_addr_len); //创建一个新连接的fd
                 set_fd_noblock(accept_fd);
-                accept_fds[curpos] = accept_fd;
-            }
 
-            for(int j=0; j < FD_SIZE; j++ ){
-                if( (accept_fds[j] != -1) && FD_ISSET(accept_fds[j], &fd_sets)){ //客户端有新的事件
-                    printf("来自 [%d]的新事件，accept_fd: %d\n",j, accept_fds[j]);
-                    char in_buf[MESSAGE_SIZE];
-                    memset(in_buf, 0, MESSAGE_SIZE);
-                    int ret = recv(accept_fds[j], &in_buf, MESSAGE_SIZE, 0);
-                    if(ret == 0){
-                        close(accept_fds[j]);
-                        accept_fds[j] = -1;
-                        printf("客户端[%d]退出\n",j);
-                        continue;
-                    }
-                    printf( "receive message:%s\n", in_buf );
-                    send(accept_fds[j], (void*)in_buf, MESSAGE_SIZE, 0);
+                if (add_client(ioSet, accept_fd) < 0) {
+                    close(accept_fd);
                 }
             }
+            //客户端输入
+            check_clients(ioSet);
+
         }
     }
 

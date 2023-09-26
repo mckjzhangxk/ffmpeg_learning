@@ -16,18 +16,9 @@ void sigint_handler(int sig) /* SIGINT handler */
     while(wait(&pid)>0){
         printf("回收子进程 %d\n",pid);
     }
-
-
-
 }
-//fork方式带来的问题
 
-//1)资源可能会被长期占用
-//2)分配子进程开销大
-int main(){
-    signal(SIGCHLD, sigint_handler);
-    int ret = -1;
-
+int open_listen_fd(){
 
     //////////////////////////////创建套接字///////////////////////////
     //1.创建套接字
@@ -41,9 +32,10 @@ int main(){
     //SO_REUSEADDR表示启动的时候，不用等待WAIT_TIME，可以直接启动。
     //问题是为什么需要等待WAIT_TIME？
     int on = 1;
-    ret = setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+    int ret = setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
     if ( ret == -1 ){
         perror("setsockopt error");
+        exit(1);
     }
 
     //////////////////////////////绑定套接字///////////////////////////
@@ -70,10 +62,41 @@ int main(){
         perror("listen error");
         exit(1);
     }
+    return socket_fd;
+}
+
+void echo(int accept_fd){
+    char in_buf[MESSAGE_SIZE] = {0,};
+
+    while (true){
+        memset(in_buf, 0, MESSAGE_SIZE);
+        //一直阻塞，直到新数据或者对端关闭？
+        int n = recv(accept_fd ,&in_buf, MESSAGE_SIZE, 0);
+        if(n == 0){
+            printf("EOF\n");
+            break;
+        }
+
+        printf( "收到消息 :%s\n", in_buf );
+        send(accept_fd, (void*)in_buf, MESSAGE_SIZE, 0);
+
+    }
+
+    printf("客户端退出\n");
+    close(accept_fd);
+}
+//fork方式带来的问题
+
+//1)资源可能会被长期占用
+//2)分配子进程开销大
+int main(){
+    signal(SIGCHLD, sigint_handler);
+
+    int socket_fd=open_listen_fd();
 
     //////////////////////////////接受连接///////////////////////////
     while (true){
-        unsigned int addr_len = sizeof( struct sockaddr_in );
+        socklen_t addr_len = sizeof( struct sockaddr_in );
 
         //accept an new connection, block......
         struct sockaddr_in  remote_addr;
@@ -88,24 +111,7 @@ int main(){
 
         if( pid==0 ){//子进程
             close(socket_fd);//减少引用计数
-            char in_buf[MESSAGE_SIZE] = {0,};
-
-            while (true){
-                memset(in_buf, 0, MESSAGE_SIZE);
-                //一直阻塞，直到新数据或者对端关闭？
-                ret = recv(accept_fd ,&in_buf, MESSAGE_SIZE, 0);
-                if(ret == 0){
-                    printf("EOF\n");
-                    break;
-                }
-
-                printf( "收到消息 :%s\n", in_buf );
-                send(accept_fd, (void*)in_buf, MESSAGE_SIZE, 0);
-
-            }
-
-            printf("客户端退出\n");
-            close(accept_fd);
+            echo(accept_fd);
             return 0;
         }else{//父进程
             close(accept_fd);//减少引用计数
@@ -114,12 +120,8 @@ int main(){
 
     }
 
-
     printf("服务器关闭 \n");
     close(socket_fd);
 
-
-
-    return 0;
 }
 
