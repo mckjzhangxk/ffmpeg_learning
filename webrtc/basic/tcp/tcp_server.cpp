@@ -5,15 +5,15 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <signal.h>
-
+#include <wait.h>
 #define MESSAGE_SIZE 1024
 
 //bool quit= false;
 void sigint_handler(int sig) /* SIGINT handler */
 {
     printf("捕捉到信号 %d\n",sig);
-    int pid;
-    while(wait(&pid)>0){
+    int pid,status;
+    while( (pid=wait(&status))>0){
         printf("回收子进程 %d\n",pid);
     }
 }

@@ -40,3 +40,4 @@ add_executable(tcp_server_libevent basic/async/tcp_server_libevent.cpp)
 target_link_libraries(tcp_server_libevent ${LIBEVENT_LIBRARIES})
 
 add_executable(sem_test basic/sem/sem_test.cpp)
+target_link_libraries(sem_test pthread)

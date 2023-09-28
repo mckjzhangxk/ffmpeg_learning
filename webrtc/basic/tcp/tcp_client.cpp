@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <arpa/inet.h>
 #include <iostream>
-
+#include "signal.h"
 using std::cin;
 using std::cout;
 using std::cerr;

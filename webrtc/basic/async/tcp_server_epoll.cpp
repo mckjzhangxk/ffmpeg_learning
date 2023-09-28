@@ -170,6 +170,7 @@ void remove_client(IO_Set &ioSet, int clientFd) {
         exit(1);
     }
     close(clientFd);
+    ioSet.client_num--;
 }
 
 //没有文件描述符的限制
