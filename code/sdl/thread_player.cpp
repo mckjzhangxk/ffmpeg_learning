@@ -22,11 +22,19 @@ extern "C"{
 #define THREAD_QUIT  (SDL_USEREVENT + 2)
 #define VIDEO_LOAD_EVENT  (SDL_USEREVENT + 3)
 #define VIDEO_NEW_FRAME  (SDL_USEREVENT + 4)
+#define PLAY_END  (SDL_USEREVENT + 5)
 #define Player_AUDIO_CHANNEL 1
 #define Player_AUDIO_SAMPLE_RATE 44100
 #define BLOCK_SIZE 1024*1024
 //音频队列，视频队列
 
+
+long long get_time_us(){
+    struct timespec start_time;
+    clock_gettime(CLOCK_MONOTONIC,&start_time);
+    return start_time.tv_sec * 1000000LL + start_time.tv_nsec / 1000LL;
+
+}
 class PacketQueue{
 public:
     PacketQueue():m_duration(0),m_size(0){
@@ -57,6 +65,7 @@ public:
 
         SDL_CondSignal(m_cond);//发送信号给对端，这个函数应该是不阻塞的
         SDL_UnlockMutex(m_mutex);
+        return 0;
     }
     //block=1,表示收不到新pkt不反回
     int dequeue(AVPacket* pkt,bool block){
@@ -127,6 +136,7 @@ public:
 
         SDL_CondSignal(m_cond);//发送信号给对端，这个函数应该是不阻塞的
         SDL_UnlockMutex(m_mutex);
+        return 0;
     }
     //block=1,表示收不到新pkt不反回
     AVFrame* dequeue(bool block){
@@ -259,6 +269,8 @@ int audio_decode(VideoStream *is, Uint8* data,int data_size) {
             av_log(NULL, AV_LOG_ERROR, "Failed to send frame to decoder!\n");
             return -1;
         }
+        av_packet_unref(&packet);
+
         int readn=0;
 
         while( ret >= 0){
@@ -266,7 +278,6 @@ int audio_decode(VideoStream *is, Uint8* data,int data_size) {
             if(ret == AVERROR(EAGAIN) || ret == AVERROR_EOF){
                 break;
             } else if( ret < 0) {
-                av_packet_unref(&packet);
                 return -1;
             }
 
@@ -283,7 +294,8 @@ int audio_decode(VideoStream *is, Uint8* data,int data_size) {
             readn+=frame_size;
             av_frame_free(&play_frame);
         }
-        av_packet_unref(&packet);
+
+
         return readn;
     } else{
         return 0;
@@ -384,8 +396,6 @@ int remux_thread (void *argv){
 
     //9.1. 视频的长宽通知给主进程
 
-
-
     SDL_Event e;
     e.type=VIDEO_LOAD_EVENT;
     is->video_decoder=v_ctx;
@@ -394,9 +404,8 @@ int remux_thread (void *argv){
 
 
     // 计算从某个点开始的时间戳（以毫秒为单位）
-    struct timespec start_time;
-    clock_gettime(CLOCK_MONOTONIC,&start_time);
-    is->start_time_ms = start_time.tv_sec * 1000000LL + start_time.tv_nsec / 1000LL;
+
+    is->start_time_ms = get_time_us();
 
     AVPacket pkt;
 
@@ -413,6 +422,8 @@ int remux_thread (void *argv){
 
     e.type=THREAD_QUIT;
     SDL_PushEvent(&e);
+
+    return 0;
 }
 int video_decode_thread (void *argv){
     static AVFrame *frame = av_frame_alloc();
@@ -458,23 +469,22 @@ int video_decode_thread (void *argv){
             av_frame_move_ref(new_frame,frame);
             is->frame_queue->enqueue(new_frame);
             //开始播放了，这几计算需要的延迟
-            AVRational base_time={1,1e6};
+            AVRational base_time={1,AV_TIME_BASE};
+
             int64_t frame_pts=av_rescale_q_rnd(pts,is->stream_time_base,base_time,static_cast<AVRounding>(AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX));
 
-            struct timespec current_time;
-            clock_gettime(CLOCK_MONOTONIC, &current_time);
+
+
             // 以系统时间戳system_pts为基准，如果packet的时间戳 晚于system_pts，等待 一定时间后再发生
-            long long current_timestamp_ms = current_time.tv_sec * 1000000LL + current_time.tv_nsec / 1000LL;
+            long long current_timestamp_ms = get_time_us();
             long long system_pts=current_timestamp_ms-is->start_time_ms;
             if (frame_pts>system_pts){
                 av_usleep((frame_pts-system_pts));
             }
 
-
-
             e.type=VIDEO_NEW_FRAME;
             SDL_PushEvent(&e);
-            av_frame_unref(frame);
+//            av_frame_unref(frame);
         }
         if (exitLoop){
             break;
@@ -483,6 +493,8 @@ int video_decode_thread (void *argv){
 
     e.type=THREAD_QUIT;
     SDL_PushEvent(&e);
+
+    return 0;
 }
 void read_audio_callback(void *userdata, Uint8 * stream,int len){
     static Uint8 AUDIO_DATA[BLOCK_SIZE];
@@ -533,7 +545,7 @@ int main(int  argc,char *argv[]){
     VideoStream is;
     memset(&is,0,sizeof(is));
     //////////////////////////窗口的初始化//////////////////////////////////////
-    SDL_Window *win = SDL_CreateWindow("Simple Player",
+    SDL_Window *win = SDL_CreateWindow("线程播放器",
                                        SDL_WINDOWPOS_UNDEFINED,
                                        SDL_WINDOWPOS_UNDEFINED,
                                        0, 0,
@@ -561,9 +573,9 @@ int main(int  argc,char *argv[]){
     //////////////////////////子线程创建//////////////////////////////////////
     int quit=0;
 
-    PacketQueue audio_packetQueue;
-    PacketQueue video_packetQueue;
-    FrameQueue  frame_queue;
+    PacketQueue audio_packetQueue; //解复用的音频包
+    PacketQueue video_packetQueue; //解复用的视频包
+    FrameQueue  frame_queue;       //解码后的数据帧
 
     is.audio_queue=&audio_packetQueue;
     is.video_queue=&video_packetQueue;
@@ -591,7 +603,7 @@ int main(int  argc,char *argv[]){
         AVFrame * frame=NULL;
 
 
-        int ii,jj,cnt;
+//        int ii,jj,cnt;
         switch(event.type) {
             case SDL_QUIT: //需要通知子线程退出
                 quit=1;
@@ -601,7 +613,7 @@ int main(int  argc,char *argv[]){
                 if (wg==2){
                     goto ENDL;
                 }
-//                break;
+                break;
             case VIDEO_LOAD_EVENT:
                 //窗口宽度默认1280
                 SDL_SetWindowSize(win, 1280,is.video_decoder->height*1280/is.video_decoder->width);
@@ -626,21 +638,21 @@ int main(int  argc,char *argv[]){
 
 
                 SDL_RenderClear(renderer);
-//                SDL_RenderCopy(renderer, texture, NULL, NULL);
-//                SDL_RenderPresent(renderer);
-
-                 cnt=2;
-                for ( ii = 0; ii < cnt; ++ii) {
-                    for ( jj = 0; jj < cnt; ++jj) {
-                        SDL_Rect screen_rect;
-                        screen_rect.w=1280/cnt;
-                        screen_rect.h=is.video_decoder->height*1280/is.video_decoder->width/cnt;
-                        screen_rect.x= 1280/cnt *ii;
-                        screen_rect.y=is.video_decoder->height*1280/is.video_decoder->width/cnt*jj;
-                        SDL_RenderCopy(renderer,texture,NULL,&screen_rect);
-                    }
-                }
+                SDL_RenderCopy(renderer, texture, NULL, NULL);
                 SDL_RenderPresent(renderer);
+
+//                 cnt=2;
+//                for ( ii = 0; ii < cnt; ++ii) {
+//                    for ( jj = 0; jj < cnt; ++jj) {
+//                        SDL_Rect screen_rect;
+//                        screen_rect.w=1280/cnt;
+//                        screen_rect.h=is.video_decoder->height*1280/is.video_decoder->width/cnt;
+//                        screen_rect.x= 1280/cnt *ii;
+//                        screen_rect.y=is.video_decoder->height*1280/is.video_decoder->width/cnt*jj;
+//                        SDL_RenderCopy(renderer,texture,NULL,&screen_rect);
+//                    }
+//                }
+//                SDL_RenderPresent(renderer);
                 av_frame_free(&frame);
                 break;
             default:

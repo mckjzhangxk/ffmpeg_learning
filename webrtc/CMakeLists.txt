@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.26)
 project(webrtc)
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LIBEVENT REQUIRED libevent)
+include_directories(${LIBEVENT_INCLUDE_DIRS})
+link_directories(${LIBEVENT_LIBRARY_DIRS})
+
 set(CMAKE_CXX_STANDARD 11)
 
 add_executable(webrtc main.cpp
@@ -30,5 +35,8 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     # macOS操作系统
     message("This is macOS.")
 endif ()
+add_executable(tcp_server_libevent basic/async/tcp_server_libevent.cpp)
 
+target_link_libraries(tcp_server_libevent ${LIBEVENT_LIBRARIES})
 
+add_executable(sem_test basic/sem/sem_test.cpp)

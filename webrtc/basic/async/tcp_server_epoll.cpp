@@ -46,7 +46,7 @@ extern int epoll_wait(int __epfd, struct epoll_event *__events, int __maxevents,
 #define MAX_EVENTS 20
 #define TIME_OUT 0
 #define MESSAGE_SIZE 1024
-
+#define PORT 9876
 
 void set_fd_noblock(int fd) {
     int flag = fcntl(fd, F_GETFD);
@@ -109,7 +109,7 @@ int echo(int accept_fd) {
     memset(in_buf, 0, MESSAGE_SIZE);
     int ret = recv(accept_fd, &in_buf, MESSAGE_SIZE, 0);
     if (ret <= 0) {
-        if (ret==0)
+        if (ret == 0)
             printf("客户端[%d]退出\n", accept_fd);
         return ret;
     }
@@ -133,14 +133,15 @@ void init_io_set(IO_Set &ioSet, int listenFd) {
     ioSet.server_fd = listenFd;
     ioSet.client_num = 0;
 
-    ioSet.epoll_fd = epoll_create(256);
+    ioSet.epoll_fd = epoll_create(256);//参数不起作用
 
-    ioSet.timeout = TIME_OUT;//500ms
+    ioSet.timeout = TIME_OUT;//ms
+
     struct epoll_event event;
-    event.events = EPOLLIN;
+    event.events = EPOLLIN; //表示输入
     event.data.fd = listenFd;
-    //epoll监控 listenFd的输入事件
-    if(epoll_ctl(ioSet.epoll_fd, EPOLL_CTL_ADD, listenFd, &event)<0){
+    //加入listenFd到 epoll监控 并设置感兴趣的事件
+    if (epoll_ctl(ioSet.epoll_fd, EPOLL_CTL_ADD, listenFd, &event) < 0) {
         exit(1);
     }
 }
@@ -152,8 +153,7 @@ int add_client(IO_Set &ioSet, int clientFd) {
     event.events = EPOLLIN | EPOLLET;//监听输入，并且是边缘，边缘的意思是 数据读取如果没有取完，也只会触发一次
     event.data.fd = clientFd;
 
-    ;
-    if(epoll_ctl(ioSet.epoll_fd, EPOLL_CTL_ADD, clientFd, &event)<0){
+    if (epoll_ctl(ioSet.epoll_fd, EPOLL_CTL_ADD, clientFd, &event) < 0) {
         perror("add_client error\n");
         return -1;
     }
@@ -162,18 +162,16 @@ int add_client(IO_Set &ioSet, int clientFd) {
 
 }
 
-void remove_client(IO_Set &ioSet, int clientFd){
+void remove_client(IO_Set &ioSet, int clientFd) {
     struct epoll_event event;
-//    event.events = EPOLLIN | EPOLLET;//监听输入，并且是边缘，边缘的意思是 数据读取如果没有取完，也只会触发一次
-//    event.data.fd = clientFd;
 
-
-    if(epoll_ctl(ioSet.epoll_fd,EPOLL_CTL_DEL,clientFd,&event)<0)
-    {
+    //一定要先删除，再close
+    if (epoll_ctl(ioSet.epoll_fd, EPOLL_CTL_DEL, clientFd, &event) < 0) {
         exit(1);
     }
     close(clientFd);
 }
+
 //没有文件描述符的限制
 //工作效率不会随着文件描述符数量而改变
 //epoll经过系统优化，更高效
@@ -181,7 +179,7 @@ int main() {
     IO_Set ioSet;
 
     //creat a tcp socket
-    int socket_fd = open_listen_fd(9876);
+    int socket_fd = open_listen_fd(PORT);
     init_io_set(ioSet, socket_fd);
 
     struct sockaddr_in remote_addr;
@@ -189,7 +187,9 @@ int main() {
 
     while (true) {
         //阻塞等待，直到有事件发生
-        int n = epoll_wait(ioSet.epoll_fd, ioSet.events, MAX_EVENTS, 1000*36);
+        printf("客户端数 %d\n", ioSet.client_num);
+
+        int n = epoll_wait(ioSet.epoll_fd, ioSet.events, MAX_EVENTS, 1000 * 36);
 
         for (int i = 0; i < n; ++i) {
             auto &e = ioSet.events[i];
@@ -201,23 +201,14 @@ int main() {
                     close(accept_fd);
                 }
 
-            } else if( e.events&EPOLLIN ) { //客户端输入
+            } else if (e.events & EPOLLIN) { //客户端输入
                 int result;
                 do {
-                    result=echo(e.data.fd);
-                } while (result<0&&errno==EAGAIN);
-
-                if (result>0){
-                    continue;
-                } else if(result==0){
-                    remove_client(ioSet,e.data.fd);
-                } else{
-                    if (errno==EINTR){
-                        //被终端，此次读取无效
-                        continue;
-                    } else{
-                        remove_client(ioSet,e.data.fd);
-                    }
+                    result = echo(e.data.fd);
+                } while (result < 0 && errno ==EINTR );
+                
+                if ((result == 0) ||  (result<0&&errno!=EAGAIN) ) {
+                    remove_client(ioSet, e.data.fd);
                 }
 
             }
