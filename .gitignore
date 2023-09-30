@@ -16,3 +16,5 @@ opengl
 .DS_Store
 code/.DS_Store
 .idea
+.cxx
+.grade
