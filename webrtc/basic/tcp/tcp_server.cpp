@@ -5,7 +5,9 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <signal.h>
+#ifdef __linux__
 #include <wait.h>
+#endif
 #define MESSAGE_SIZE 1024
 
 //bool quit= false;

@@ -41,3 +41,9 @@ target_link_libraries(tcp_server_libevent ${LIBEVENT_LIBRARIES})
 
 add_executable(sem_test basic/sem/sem_test.cpp)
 target_link_libraries(sem_test pthread)
+
+#stun服务
+add_executable(stun_server stun/stun_server.cpp
+        stun/utils.cpp)
+add_executable(stun_client stun/stun_client.cpp
+        stun/utils.cpp)

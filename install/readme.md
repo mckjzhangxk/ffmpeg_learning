@@ -3,7 +3,7 @@
 apt install libfdk-aac-dev
 ```
 
-```s
+```sh
 ./configure --enable-libmp3lame --enable-libx264 --enable-gpl --enable-libopus --enable-libvpx --enable-libfdk-aac --enable-nonfree --enable-shared --disable-stripping --enable-zlib --enable-avresample --enable-decoder=png
 
 make && make install
