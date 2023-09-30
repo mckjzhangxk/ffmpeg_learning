@@ -17,4 +17,4 @@ opengl
 code/.DS_Store
 .idea
 .cxx
-.grade
+.gradle
