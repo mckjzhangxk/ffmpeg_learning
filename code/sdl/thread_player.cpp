@@ -35,19 +35,103 @@ long long get_time_us(){
     return start_time.tv_sec * 1000000LL + start_time.tv_nsec / 1000LL;
 
 }
-class PacketQueue{
+//class PacketQueue{
+//public:
+//    PacketQueue():m_duration(0),m_size(0){
+//        m_mutex=SDL_CreateMutex();
+//        m_cond=SDL_CreateCond();
+//    }
+//
+//
+//    ~PacketQueue(){
+//        flush();
+//        SDL_DestroyCond(m_cond);
+//        SDL_DestroyMutex(m_mutex);
+//    }
+//    int enqueue(AVPacket* pkt){
+//        AVPacket* new_pkt=av_packet_alloc();
+//
+//        if(!new_pkt){
+//            av_packet_unref(pkt);
+//            return -1;
+//        }
+//        //这个方法，其实是把pkt的内部字段都释放掉了
+//        av_packet_move_ref(new_pkt,pkt);
+//
+//        SDL_LockMutex(m_mutex);
+//        m_size+=new_pkt->size;
+//        m_duration+=new_pkt->duration;
+//        m_data.emplace_back(new_pkt);
+//
+//        SDL_CondSignal(m_cond);//发送信号给对端，这个函数应该是不阻塞的
+//        SDL_UnlockMutex(m_mutex);
+//        return 0;
+//    }
+//    //block=1,表示收不到新pkt不反回
+//    int dequeue(AVPacket* pkt,bool block){
+//        int ret=-1;
+//        SDL_LockMutex(m_mutex);
+//
+//        while (1){
+//            if (!m_data.empty()){
+//                AVPacket* p=m_data[0];
+//                m_size-=p->size;
+//                m_duration-=p->duration;
+//                //这个方法，其实是把pkt的内部字段都释放掉了,所以没有必要再调用av_package_unref()
+//                av_packet_move_ref(pkt,p);
+//                m_data.erase(m_data.begin());
+//                ret=1;
+//                break;
+//            }
+//            if (!block){
+//                ret=0;
+//                break;
+//            } else{
+//                SDL_CondWait(m_cond,m_mutex);//解锁m_mutex，然后阻塞等待信号量，收到信号时，重新再去加锁
+//            }
+//        }
+//
+//        SDL_UnlockMutex(m_mutex);
+//
+//        return ret;
+//    }
+//
+//    void flush(){
+//        SDL_LockMutex(m_mutex);
+//
+//        for (int i = 0; i <m_data.size() ; ++i) {
+//            av_packet_free(&m_data[i]);
+//        }
+//        m_data.clear();
+//        m_size=0;
+//        m_duration=0;
+//        SDL_UnlockMutex(m_mutex);
+//    }
+//private:
+//    std::vector<AVPacket*> m_data;
+//    int m_size;
+//    int64_t m_duration;
+//
+//    SDL_mutex *m_mutex;
+//    SDL_cond * m_cond;
+//};
+
+class Queue{
 public:
-    PacketQueue():m_duration(0),m_size(0){
+    Queue(int queue_max_size){
+        m_sem_slots=SDL_CreateSemaphore(queue_max_size);
+        m_sem_items=SDL_CreateSemaphore(0);
         m_mutex=SDL_CreateMutex();
-        m_cond=SDL_CreateCond();
     }
 
 
-    ~PacketQueue(){
+    ~Queue(){
         flush();
-        SDL_DestroyCond(m_cond);
+        SDL_DestroySemaphore(m_sem_slots);
+        SDL_DestroySemaphore(m_sem_items);
         SDL_DestroyMutex(m_mutex);
     }
+
     int enqueue(AVPacket* pkt){
         AVPacket* new_pkt=av_packet_alloc();
 
@@ -58,40 +142,40 @@ public:
         //这个方法，其实是把pkt的内部字段都释放掉了
         av_packet_move_ref(new_pkt,pkt);
 
-        SDL_LockMutex(m_mutex);
-        m_size+=new_pkt->size;
-        m_duration+=new_pkt->duration;
-        m_data.emplace_back(new_pkt);
+        SDL_SemWait(m_sem_slots);
 
-        SDL_CondSignal(m_cond);//发送信号给对端，这个函数应该是不阻塞的
+        SDL_LockMutex(m_mutex);
+        m_data.emplace_back(new_pkt);
         SDL_UnlockMutex(m_mutex);
+
+        SDL_SemPost(m_sem_items);
+
         return 0;
     }
-    //block=1,表示收不到新pkt不反回
-    int dequeue(AVPacket* pkt,bool block){
-        int ret=-1;
-        SDL_LockMutex(m_mutex);
 
-        while (1){
-            if (!m_data.empty()){
-                AVPacket* p=m_data[0];
-                m_size-=p->size;
-                m_duration-=p->duration;
-                //这个方法，其实是把pkt的内部字段都释放掉了,所以没有必要再调用av_package_unref()
-                av_packet_move_ref(pkt,p);
-                m_data.erase(m_data.begin());
-                ret=1;
-                break;
-            }
-            if (!block){
-                ret=0;
-                break;
-            } else{
-                SDL_CondWait(m_cond,m_mutex);//解锁m_mutex，然后阻塞等待信号量，收到信号时，重新再去加锁
+
+    //block=1,表示收不到新pkt不反回
+    int dequeue(AVPacket* pkt,bool block=1){
+        int ret=1;
+
+        if (block){
+            SDL_SemWait(m_sem_items);
+        } else{
+            if(SDL_SemWaitTimeout(m_sem_items,500)==SDL_MUTEX_TIMEDOUT){
+                return 0;
             }
         }
 
+
+
+        SDL_LockMutex(m_mutex);
+        AVPacket* p=m_data[0];
+        //这个方法，其实是把pkt的内部字段都释放掉了,所以没有必要再调用av_package_unref()
+        av_packet_move_ref(pkt,p);
+        m_data.erase(m_data.begin());
         SDL_UnlockMutex(m_mutex);
+
+        SDL_SemPost(m_sem_slots);
 
         return ret;
     }
@@ -103,20 +187,14 @@ public:
             av_packet_free(&m_data[i]);
         }
         m_data.clear();
-        m_size=0;
-        m_duration=0;
         SDL_UnlockMutex(m_mutex);
     }
 private:
-    std::vector<AVPacket*> m_data;
-    int m_size;
-    int64_t m_duration;
-
+    SDL_semaphore * m_sem_slots;
+    SDL_semaphore * m_sem_items;
     SDL_mutex *m_mutex;
-    SDL_cond * m_cond;
+    std::vector<AVPacket*> m_data;
 };
-
-
 
 class FrameQueue{
 public:
@@ -239,8 +317,8 @@ private:
 
 typedef struct _VideoStream{
     char * infile;
-    PacketQueue *video_queue;
-    PacketQueue *audio_queue;
+    Queue *video_queue;
+    Queue *audio_queue;
     FrameQueue * frame_queue;
 
     AVCodecContext *video_decoder;
@@ -422,7 +500,7 @@ int remux_thread (void *argv){
 
     e.type=THREAD_QUIT;
     SDL_PushEvent(&e);
-
+    printf("=>解复用线程退出\n");
     return 0;
 }
 int video_decode_thread (void *argv){
@@ -432,14 +510,16 @@ int video_decode_thread (void *argv){
 
     int* quit=(int*)p_argv[0];
     VideoStream * is=(VideoStream *)p_argv[1];
-    PacketQueue* video_queue=is->video_queue;
+    Queue* video_queue=is->video_queue;
     printf("=>视频解码线程\n");
 
     AVPacket pkt;
     SDL_Event e;
     while (!*quit){
         int ret=video_queue->dequeue(&pkt,0);
-
+        if (*quit){
+            break;
+        }
         if (!ret){
             continue;
         }
@@ -494,6 +574,7 @@ int video_decode_thread (void *argv){
     e.type=THREAD_QUIT;
     SDL_PushEvent(&e);
 
+    printf("=>视频解码线程退出\n");
     return 0;
 }
 void read_audio_callback(void *userdata, Uint8 * stream,int len){
@@ -532,7 +613,8 @@ void read_audio_callback(void *userdata, Uint8 * stream,int len){
     }
 }
 
-
+//C++ 同步机制
+//https://en.cppreference.com/w/cpp/thread/condition_variable/wait
 int main(int  argc,char *argv[]){
     if (argc<2){
         fprintf( stdout, "Usage thread_player videoname\n");
@@ -573,8 +655,8 @@ int main(int  argc,char *argv[]){
     //////////////////////////子线程创建//////////////////////////////////////
     int quit=0;
 
-    PacketQueue audio_packetQueue; //解复用的音频包
-    PacketQueue video_packetQueue; //解复用的视频包
+    Queue audio_packetQueue(128); //解复用的音频包
+    Queue video_packetQueue(128); //解复用的视频包
     FrameQueue  frame_queue;       //解码后的数据帧
 
     is.audio_queue=&audio_packetQueue;
