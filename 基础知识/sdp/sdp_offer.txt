@@ -1,0 +1,76 @@
+v=0
+o=- 8853767239594287953 2 IN IP4 127.0.0.1
+s=-
+t=0 0
+a=extmap-allow-mixed
+a=msid-semantic: WMS 2be128ba-1d03-42bf-ab0e-7629d9eac16e
+a=group:BUNDLE 0 1 2
+m=audio 9 UDP/TLS/RTP/SAVPF 111 63 13
+c=IN IP4 0.0.0.0
+b=AS:40
+a=rtpmap:111 opus/48000/2
+a=rtpmap:63 red/48000/2
+a=rtpmap:13 CN/8000
+a=fmtp:111 minptime=10;useinbandfec=1
+a=fmtp:63 111/111
+a=rtcp:9 IN IP4 0.0.0.0
+a=rtcp-fb:111 transport-cc
+a=rtcp-fb:111 nack
+a=extmap:2 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time
+a=extmap:3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01
+a=setup:actpass
+a=mid:0
+a=msid:2be128ba-1d03-42bf-ab0e-7629d9eac16e 143c8ad2-45fc-45de-aa91-a4e80ec05052
+a=sendonly
+a=ice-ufrag:MFMb
+a=ice-pwd:PtY0paRaCSFx+GvJnI6XF4NN
+a=fingerprint:sha-256 2E:B8:64:CF:65:65:A5:80:A8:37:DC:B0:99:EB:41:89:3D:18:4C:7D:FD:B2:D3:B2:D0:06:D0:73:6A:BD:2B:EE
+a=ice-options:trickle
+a=ssrc:115004929 cname:duaddjrw93wG+Dz4
+a=ssrc:115004929 msid:2be128ba-1d03-42bf-ab0e-7629d9eac16e 143c8ad2-45fc-45de-aa91-a4e80ec05052
+a=rtcp-mux
+m=video 9 UDP/TLS/RTP/SAVPF 106 107 108 109 116 117 118
+c=IN IP4 0.0.0.0
+b=AS:500
+a=rtpmap:106 H264/90000
+a=rtpmap:107 rtx/90000
+a=rtpmap:108 H264/90000
+a=rtpmap:109 rtx/90000
+a=rtpmap:116 red/90000
+a=rtpmap:117 rtx/90000
+a=rtpmap:118 ulpfec/90000
+a=fmtp:106 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f
+a=fmtp:107 apt=106
+a=fmtp:108 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f
+a=fmtp:109 apt=108
+a=fmtp:117 apt=116
+a=rtcp:9 IN IP4 0.0.0.0
+a=rtcp-fb:106 goog-remb
+a=rtcp-fb:106 transport-cc
+a=rtcp-fb:106 ccm fir
+a=rtcp-fb:106 nack
+a=rtcp-fb:106 nack pli
+a=rtcp-fb:108 goog-remb
+a=rtcp-fb:108 transport-cc
+a=rtcp-fb:108 ccm fir
+a=rtcp-fb:108 nack
+a=rtcp-fb:108 nack pli
+a=extmap:2 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time
+a=extmap:3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01
+a=extmap:10 urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id
+a=extmap:11 urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id
+a=mid:1
+a=msid:2be128ba-1d03-42bf-ab0e-7629d9eac16e eebc9f12-c76e-4d85-b1e4-df5c46ecb970
+a=sendonly
+a=ssrc:1025049596 cname:duaddjrw93wG+Dz4
+a=ssrc:1025049596 msid:2be128ba-1d03-42bf-ab0e-7629d9eac16e eebc9f12-c76e-4d85-b1e4-df5c46ecb970
+a=ssrc:41177024 cname:duaddjrw93wG+Dz4
+a=ssrc:41177024 msid:2be128ba-1d03-42bf-ab0e-7629d9eac16e eebc9f12-c76e-4d85-b1e4-df5c46ecb970
+a=ssrc-group:FID 1025049596 41177024
+a=rtcp-mux
+a=rtcp-rsize
+m=application 9 UDP/DTLS/SCTP webrtc-datachannel
+c=IN IP4 0.0.0.0
+a=mid:2
+a=sctp-port:5000
+a=max-message-size:262144
