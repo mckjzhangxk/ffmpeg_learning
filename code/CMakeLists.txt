@@ -53,6 +53,7 @@ add_executable(device_record_video device/record_video.cpp)
 
 #重采样相关
 add_executable(resample_basic basic/resample/resample_basic.cpp)
+add_executable(resample_video basic/resample/resample_video.cpp)
 add_executable(audio_resample basic/audio_resample.cpp)
 
 
@@ -99,6 +100,7 @@ target_link_libraries(device_record_video ${FFMPEG_LIBRARIES} )
 
 #重采样相关
 target_link_libraries(resample_basic ${FFMPEG_LIBRARIES})
+target_link_libraries(resample_video ${FFMPEG_LIBRARIES})
 target_link_libraries(audio_resample ${FFMPEG_LIBRARIES})
 
 
