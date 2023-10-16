@@ -6,6 +6,14 @@ pkg_check_modules(LIBEVENT REQUIRED libevent)
 include_directories(${LIBEVENT_INCLUDE_DIRS})
 link_directories(${LIBEVENT_LIBRARY_DIRS})
 
+include_directories(/Users/zhanggxk/project/bin/cppcms/include)
+link_directories(/Users/zhanggxk/project/bin/cppcms/lib)
+
+
+include_directories(/Users/zhanggxk/project/bin/libcurl/include)
+link_directories(/Users/zhanggxk/project/bin/libcurl/lib)
+
+
 set(CMAKE_CXX_STANDARD 11)
 
 add_executable(webrtc main.cpp
@@ -47,3 +55,27 @@ add_executable(stun_server stun/stun_server.cpp
         stun/utils.cpp)
 add_executable(stun_client stun/stun_client.cpp
         stun/utils.cpp)
+
+
+
+#cppcms
+add_executable(hellocms cppcms_tutorial/hello.cpp)
+target_link_libraries(hellocms cppcms)
+
+add_executable(mappingcms cppcms_tutorial/mapping.cpp)
+target_link_libraries(mappingcms cppcms)
+
+add_executable(hierarchy cppcms_tutorial/hierarchy.cpp)
+target_link_libraries(hierarchy cppcms)
+
+
+add_executable(json_cms cppcms_tutorial/json_cms.cpp)
+target_link_libraries(json_cms cppcms)
+
+
+add_executable(server cppcms_tutorial/server.cpp)
+target_link_libraries(server cppcms)
+
+
+add_executable(curl_tutorial libcurl_tutorial/curl_tutorial.cpp)
+target_link_libraries(curl_tutorial curl)

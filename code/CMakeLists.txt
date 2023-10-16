@@ -10,7 +10,7 @@ include_directories(/Users/zhanggxk/project/bin/SDL/include/SDL2)
 link_directories(/Users/zhanggxk/project/bin/SDL/lib)
 
 
-pkg_check_modules(FFMPEG REQUIRED libavformat libavcodec libavutil libavdevice libswscale libswresample)
+pkg_check_modules(FFMPEG REQUIRED libavformat libavcodec libavutil libavdevice libswscale libswresample libavfilter)
 message("---Find FFmpeg library")
 message("---include path: ${FFMPEG_INCLUDE_DIRS}")
 message("---library path: ${FFMPEG_LIBRARY_DIRS}")
@@ -55,7 +55,8 @@ add_executable(device_record_video device/record_video.cpp)
 add_executable(resample_basic basic/resample/resample_basic.cpp)
 add_executable(resample_video basic/resample/resample_video.cpp)
 add_executable(audio_resample basic/audio_resample.cpp)
-
+#filter相关
+add_executable(drawbox_filter basic/filter/drawbox_filter.cpp)
 
 add_executable(concat excercise/concat.c)
 add_executable(split excercise/split.c)
@@ -103,6 +104,9 @@ target_link_libraries(resample_basic ${FFMPEG_LIBRARIES})
 target_link_libraries(resample_video ${FFMPEG_LIBRARIES})
 target_link_libraries(audio_resample ${FFMPEG_LIBRARIES})
 
+#filter相关
+target_link_libraries(drawbox_filter ${FFMPEG_LIBRARIES})
+
 
 target_link_libraries(concat  ${FFMPEG_LIBRARIES})
 target_link_libraries(split  ${FFMPEG_LIBRARIES})
@@ -137,6 +141,9 @@ target_link_libraries(packet_view ${FFMPEG_LIBRARIES})
 
 add_executable(h264ToTs excercise/h264ToTs.cpp)
 target_link_libraries(h264ToTs ${FFMPEG_LIBRARIES})
+
+
+
 
 
 

@@ -12,7 +12,7 @@ extern "C"{
 #include <libavcodec/avcodec.h>
 #include <libswresample/swresample.h>
 #include <SDL.h>
-
+#include <libavutil/timestamp.h>
 #ifdef __cplusplus
 }
 #endif
@@ -265,8 +265,9 @@ public:
     AudioConverter(AVCodecContext* ctx){
         m_sample_rate=ctx->sample_rate;
         m_swrContext=swr_alloc();
+//        ctx->channels
 
-        av_opt_set_int(m_swrContext, "in_channel_layout", ctx->channel_layout, 0);
+        av_opt_set_int(m_swrContext, "in_channel_layout", ctx->channel_layout? ctx->channel_layout:3, 0);
         av_opt_set_int(m_swrContext, "in_sample_rate", ctx->sample_rate, 0);
         av_opt_set_sample_fmt(m_swrContext, "in_sample_fmt", ctx->sample_fmt, 0);
         av_opt_set_int(m_swrContext, "out_channel_layout", Player_AUDIO_CHANNEL==1?AV_CH_LAYOUT_MONO:AV_CH_LAYOUT_STEREO, 0); // 目标通道布局（立体声）
@@ -503,6 +504,7 @@ int remux_thread (void *argv){
     printf("=>解复用线程退出\n");
     return 0;
 }
+
 int video_decode_thread (void *argv){
     static AVFrame *frame = av_frame_alloc();
 
@@ -543,8 +545,11 @@ int video_decode_thread (void *argv){
             }
             //这里控制帧率
 
-            int pts=frame->pts;
-//            av_frame_get_best_effort_timestamp(frame);
+            int64_t pts=frame->pts;
+            if (pts==AV_NOPTS_VALUE){
+                pts=av_frame_get_best_effort_timestamp(frame);
+            }
+
             AVFrame *new_frame=av_frame_alloc();
             av_frame_move_ref(new_frame,frame);
             is->frame_queue->enqueue(new_frame);
@@ -552,7 +557,7 @@ int video_decode_thread (void *argv){
             AVRational base_time={1,AV_TIME_BASE};
 
             int64_t frame_pts=av_rescale_q_rnd(pts,is->stream_time_base,base_time,static_cast<AVRounding>(AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX));
-
+//            printf("%s\n",av_ts2timestr(pts,&is->stream_time_base));
 
 
             // 以系统时间戳system_pts为基准，如果packet的时间戳 晚于system_pts，等待 一定时间后再发生
