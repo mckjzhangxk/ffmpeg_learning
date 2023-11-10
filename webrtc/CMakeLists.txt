@@ -79,3 +79,10 @@ target_link_libraries(server cppcms)
 
 add_executable(curl_tutorial libcurl_tutorial/curl_tutorial.cpp)
 target_link_libraries(curl_tutorial curl)
+
+
+add_executable(socket_pair basic/pipe/socketpair_demo.cpp)
+add_executable(rtsp_server rtsp_server/rtsp_server.cpp)
+add_executable(rtsp_tcp_server rtsp_server/rtsp_tcp_server.cpp)
+add_executable(rtsp_tcp_server_h265 rtsp_server/rtsp_tcp_server_h265.cpp)
+add_executable(proxy rtsp_server/proxy.cpp)

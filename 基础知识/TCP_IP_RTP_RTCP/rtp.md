@@ -23,11 +23,11 @@
 - M(Marker)：含义取决于应用程序。视频表示是否是视频帧的结束,音频标准起始
 - PT:payload type,payload type会关联一个clock Rate.96以上是自定义的PT
 - <font color=red>Sequence Number :连续的需要，每次加1.用于对数据包拍戏</font>
--  <font color=pink>Timestamp ：生成RTP包的时候一个相对的时间错，时间基有PT.clock Rate决定,分包后的数据包，每个包中timestamp都一样</font>
+-  <font color=pink>Timestamp ：生成RTP包的时候一个相对的时间戳，时间基由PT.clock Rate决定,分包后的数据包，每个包中timestamp都一样</font>
 - SSRC(源的标识符)：一般标识 一路音频或者一路视频. 
 - CSRC(共享源的标识符)：用于标识参与生成RTP数据包的各个贡献源。CSRC计数器字段指示了CSRC列表的长度。
 
-
+- RTP头部是12字节，不包括CSRC.
 ## RTCP
 ```
 0                   1                   2                   3

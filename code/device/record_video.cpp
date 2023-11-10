@@ -30,6 +30,8 @@ public:
 //        int size=2940*1912+2940*1912/2; //
 //        return fwrite(packet->data,size,1,fp)>0;
 
+        //nv12  YYYY YYYY YYYY YYYY UVUV UVUV
+        //420p  YYYY YYYY YYYY YYYY UUUU VVVV
 
         int ysize=2940*1912;
         int usize=2940*1912/4;

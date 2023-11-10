@@ -64,7 +64,7 @@ libavdevice.a          libavresample.a     libswscale.a
 ```sh
 brew install fdk-aac
 brew  install opus
-brew install x264 x265
+brew install x264 x265,libvpx
 brew install pkg-config
 
 # 
@@ -92,6 +92,8 @@ PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/opt/homebrew/opt/x265/lib/pkgconfig
 --enable-libopus \
 --enable-libx264 \
 --enable-libx265 \
+--enable-libvpx \
+--enable-sdl2 \
 --extra-ldflags="-L /opt/homebrew/opt/fdk-aac/lib -L /opt/homebrew/opt/opus/lib -L /opt/homebrew/opt/opus/lib -L /opt/homebrew/opt/x264/lib -L /opt/homebrew/opt/x265/lib" \
 --extra-cflags="-I /opt/homebrew/opt/fdk-aac/include -I /opt/homebrew/opt/opus/include -I /opt/homebrew/opt/x264/include -I /opt/homebrew/opt/x265/include"
 
