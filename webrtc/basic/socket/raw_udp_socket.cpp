@@ -21,11 +21,11 @@ using std::endl;
 uint16_t checksum_generic(uint16_t *addr, uint32_t count)
 {
     register unsigned long sum = 0;
-
+    //从后往前相加，每个word为一个元素
     for (sum = 0; count > 1; count -= 2)
         sum += *addr++;
     if (count == 1)
-        sum += (char)*addr;
+        sum += (char)*addr; //如果是奇数，扩展addr[0] --> 0x00 addr[0]
 
     sum = (sum >> 16) + (sum & 0xFFFF);
     sum += (sum >> 16);
@@ -39,29 +39,29 @@ uint16_t checksum_generic(uint16_t *addr, uint32_t count)
 // 3.srcip
 // 4.desip
 // 5.protocal
-// 6.udp数据包长度
-uint16_t checksum_tcpudp(struct ip *iph, void *buff, uint16_t data_len, int len)
+// 6.udp数据包长度:注意这里是大端模式
+uint16_t checksum_tcpudp(struct ip *iph, void *buff,int buff_len, uint16_t data_len)
 {
     const uint16_t *buf = ( const uint16_t *)buff;
     uint32_t ip_src = iph->ip_src.s_addr;
     uint32_t ip_dst = iph->ip_dst.s_addr;
     uint32_t sum = 0;
 
-    while (len > 1)
+    while (buff_len > 1)
     {
         sum += *buf;
         buf++;
-        len -= 2;
+        buff_len -= 2;
     }
 
-    if (len == 1)
+    if (buff_len == 1)
         sum += *((uint8_t *) buf);
 
     sum += (ip_src >> 16) & 0xFFFF;
     sum += ip_src & 0xFFFF;
     sum += (ip_dst >> 16) & 0xFFFF;
     sum += ip_dst & 0xFFFF;
-    sum += htons(iph->ip_p); //这里是大端
+    sum += htons(iph->ip_p); //这里是大端  0x11 0x00
     sum += data_len;
 
     while (sum >> 16)
@@ -161,9 +161,17 @@ void create_udp_packet(
     udphdr->uh_ulen = htons(sizeof(struct udphdr) + datasize);
     udphdr->uh_sum = 0;  //之前设置有问题导致发包收不到
 #endif
-
+    //校验和生成
     ipheader->ip_sum=checksum_generic((uint16_t*)out_packet,sizeof(struct ip));
-    udphdr->uh_sum=checksum_tcpudp(ipheader,udphdr,udphdr->uh_ulen,udphdr->uh_ulen);
+#ifdef __linux__
+    udphdr->check=0;
+    //之前忽视了udphdr->len已经是大端模式，错误把udphdr->len当做了udphdr数据包大小
+    udphdr->check=checksum_tcpudp(ipheader,udphdr,ntohs(udphdr->len),udphdr->len);
+    cout<<udphdr->check<<endl;
+#elif defined(__APPLE__) && defined(__MACH__)
+    udphdr->uh_sum=checksum_tcpudp(ipheader,udphdr, ntohs(udphdr->uh_ulen),udphdr->uh_ulen);
+#endif
+
 }
 /**
  * 本程序无法在mac上运行
