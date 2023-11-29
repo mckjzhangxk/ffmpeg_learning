@@ -21,7 +21,7 @@ void sigint_handler(int sig) /* SIGINT handler */
 }
 
 int open_listen_fd(){
-
+    
     //////////////////////////////创建套接字///////////////////////////
     //1.创建套接字
     int socket_fd = socket(AF_INET, SOCK_STREAM, 0);

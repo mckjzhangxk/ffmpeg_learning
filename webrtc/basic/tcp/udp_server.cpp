@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <signal.h>
+#include <arpa/inet.h>
 #define MESSAGE_SIZE 1024
 
 
@@ -69,7 +70,9 @@ int main() {
         if (n<0){
             break;
         }
-        printf("收到消息 长度 %d :%s\n", n,in_buf);
+        char ip_buffer[128];
+        inet_ntop(AF_INET,&remote_addr.sin_addr,ip_buffer,128);
+        printf("收到消息[%s:%d] 长度 %d :%s\n", ip_buffer, ntohs(remote_addr.sin_port),n,in_buf);
 
 
         sendto(socket_fd,in_buf,MESSAGE_SIZE,0, (struct sockaddr *) &remote_addr,sizeof(remote_addr));

@@ -75,6 +75,7 @@ add_executable(pcm_player sdl/pcm_player.c)
 add_executable(simple_player sdl/simple_player.c)
 add_executable(simple_player2 sdl/simple_player2.cpp)
 add_executable(thread_player sdl/thread_player.cpp)
+add_executable(thread_player_video_only sdl/thread_player_video_only.cpp)
 #add_executable(sdlrect sdl/rect.c)
 
 #流媒体相关
@@ -128,6 +129,7 @@ target_link_libraries(pcm_player SDL2 ${FFMPEG_LIBRARIES})
 target_link_libraries(simple_player SDL2 ${FFMPEG_LIBRARIES})
 target_link_libraries(simple_player2 SDL2 ${FFMPEG_LIBRARIES})
 target_link_libraries(thread_player SDL2 ${FFMPEG_LIBRARIES})
+target_link_libraries(thread_player_video_only SDL2 ${FFMPEG_LIBRARIES})
 
 #流媒体相关
 target_link_libraries(rtmp_stream ${RTMP_LIBRARIES})

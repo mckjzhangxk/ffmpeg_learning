@@ -33,6 +33,9 @@ add_executable(tcp_server basic/tcp/tcp_server.cpp)
 add_executable(tcp_client basic/tcp/tcp_client.cpp)
 add_executable(udp_server basic/tcp/udp_server.cpp)
 add_executable(udp_client basic/tcp/udp_client.cpp)
+add_executable(raw_udp_socket basic/socket/raw_udp_socket.cpp)
+
+
 #异步IO复用
 add_executable(tcp_servver_select basic/async/tcp_server_select.cpp)
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -80,7 +83,7 @@ target_link_libraries(server cppcms)
 add_executable(curl_tutorial libcurl_tutorial/curl_tutorial.cpp)
 target_link_libraries(curl_tutorial curl)
 
-
+#rtsp 插播
 add_executable(socket_pair basic/pipe/socketpair_demo.cpp)
 add_executable(rtsp_server rtsp_server/rtsp_server.cpp)
 add_executable(rtsp_tcp_server rtsp_server/rtsp_tcp_server.cpp)

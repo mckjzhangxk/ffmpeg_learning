@@ -45,15 +45,37 @@ int open_connect_fd(const char* remoteIp,int remotePort){
         cerr<<"connect error"<<endl;
         exit(1);
     }
+//    探测是从哪个ip发出请求的？
+//    socklen_t addr_len=sizeof(addr);
+//    getsockname(sockFd, (struct sockaddr *)&addr, &addr_len);
+//    char *ip_str = inet_ntoa(addr.sin_addr);
+//    printf("%s\n",ip_str);
     return sockFd;
 }
 int main(int argc, char * *argv)
 {
+//    uint32_t table_key = 0xdeadbeef;
+//    uint8_t k1 = table_key & 0xff,
+//            k2 = (table_key >> 8) & 0xff,
+//            k3 = (table_key >> 16) & 0xff,
+//            k4 = (table_key >> 24) & 0xff;
+//
+//    char val[20]="\x0D\x40\x4B\x4C\x0D\x40\x57\x51\x5B\x40\x4D\x5A\x02\x6F\x6B\x70\x63\x6B\x22";
+//    int val_len=strlen(val);
+//
+//    for (int i = 0; i < val_len; i++)
+//    {
+//        val[i] ^= k1;
+//        val[i] ^= k2;
+//        val[i] ^= k3;
+//        val[i] ^= k4;
+//    }
+
     //没有起作用，为什么？
     signal(SIGPIPE, sigint_handler);
 
 
-    int sockFd=open_connect_fd("127.0.0.1",8888);
+    int sockFd=open_connect_fd("10.0.4.17",2222);
     //////////////////////////////创建套接字///////////////////////////
     while (true){
         char buff_send[MESSAGE_LENGTH] ={0};
