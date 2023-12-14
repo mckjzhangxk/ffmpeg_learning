@@ -125,7 +125,7 @@ struct IO_Set {
 
     int client_num;
 
-    struct epoll_event events[MAX_EVENTS];
+    struct epoll_event events[MAX_EVENTS];//当有io事件发生，epoll_wait存到到此处我们感兴趣的事件
     int timeout;
 };
 

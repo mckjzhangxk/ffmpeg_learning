@@ -32,7 +32,7 @@ uint8_t nal_buf[NAL_BUF_SIZE];
 void sigpipe_handler(int sig){
 
 }
-
+//绑定并监听端口port
 int open_listen_fd(int port){
 
     //////////////////////////////创建套接字///////////////////////////
@@ -97,21 +97,21 @@ public:
     Buffer():cnt(0){
 
     }
-
+    //把buf写入内部的缓存
     void Write(const char *buf,int size){
         memcpy(buffer+cnt,buf,size);
         cnt+=size;
     }
+    //把buf写入内部的缓存
     void Write(const char *buf){
         int size= strlen(buf);
         Write(buf,size);
     }
-
+    //把buf写入内部的缓存
     void Write(std::string& msg){
         Write(msg.data(),msg.size());
     }
-
-
+    //输出buffer
     void Send(int fd){
         send(fd, (void*)buffer,cnt, 0);
         cnt=0;
@@ -149,7 +149,10 @@ public:
 
 
 
-
+//填充init_rtsp_header
+//seq_num 序列号
+//ts_current 时间戳
+//marker marker标志位
 void  init_rtsp_header(rtp_header_t *rtp_hdr,uint16_t& seq_num,uint32_t ts_current,int marker=0){
 
     /*
@@ -169,6 +172,10 @@ void  init_rtsp_header(rtp_header_t *rtp_hdr,uint16_t& seq_num,uint32_t ts_curre
 }
 
 // 1-start 2-end,0
+//初始化FU-A 封包
+//fu_indicator_t fu_header_t 各占一个字节
+//nalu_hdr 是nalu的头
+//frag_type表示本fu-a的类型 0-普通包，1-起始包，2-终止包
 void init_fragment_header(fu_indicator_t *fu_ind,fu_header_t *fu_hdr,uint8_t nalu_hdr, int frag_type=0){
     fu_ind->f = (nalu_hdr & 0x80) >> 7;
     fu_ind->nri = (nalu_hdr & 0x60) >> 5;
@@ -188,6 +195,10 @@ void init_fragment_header(fu_indicator_t *fu_ind,fu_header_t *fu_hdr,uint8_t nal
     }
 }
 
+//framerate:帧率，用于计算每一个rtsp的时间戳，来自相同的nalu包的时间戳一致
+//nalu_buf，nalu_len：nalu包
+//rtsp
+//init:置1的时候，时间戳，序列号都会被重置
 static int h264nal2rtp_send(int framerate, uint8_t *nalu_buf, int nalu_len,RTSP & rtsp,int init)
 {
     static uint32_t ts_current = 0;
@@ -216,20 +227,13 @@ static int h264nal2rtp_send(int framerate, uint8_t *nalu_buf, int nalu_len,RTSP 
     rtp_header_t *rtp_hdr=(rtp_header_t*)SENDBUFFER;
 
 
-
-
-
-    if (nalu_len <= RTP_PAYLOAD_MAX_SIZE) {
-        /*
-         * single nal unit
-         */
-
+    if (nalu_len <= RTP_PAYLOAD_MAX_SIZE) {//不需要分包
         memset(SENDBUFFER, 0, SEND_BUF_SIZE);
 
         //1. 设置 rtp 头
         init_rtsp_header(rtp_hdr,seq_num,ts_current);
         //2. 填充nal内容
-        memcpy(SENDBUFFER + RTP_HEADER_SIZE, nalu_buf, nalu_len );    /* 不拷贝nalu头 */
+        memcpy(SENDBUFFER + RTP_HEADER_SIZE, nalu_buf, nalu_len );    // 拷贝nalu头+body
 
         //3. 发送打包好的rtp到客户端
 
@@ -238,7 +242,7 @@ static int h264nal2rtp_send(int framerate, uint8_t *nalu_buf, int nalu_len,RTSP 
         packet.interleaved[2] = (rtp_size & 0xff00)>>8;
         packet.interleaved[3] = rtp_size & 0xff;
 
-        if(rtsp.Send((void *)&packet, 4+RTP_HEADER_SIZE + nalu_len)<=0){
+        if(rtsp.Send((void *)&packet, 4+rtp_size)<=0){
             return -1;
         }
 
@@ -253,22 +257,22 @@ static int h264nal2rtp_send(int framerate, uint8_t *nalu_buf, int nalu_len,RTSP 
         /* 最后一个分片的大小 */
         int last_fu_pack_size = nalu_len_minus_one % RTP_PAYLOAD_MAX_SIZE ? nalu_len_minus_one % RTP_PAYLOAD_MAX_SIZE : RTP_PAYLOAD_MAX_SIZE;
 
-
+        uint8_t nalu_header=nalu_buf[0];
         for (int fu_seq = 0; fu_seq < fu_pack_num; fu_seq++) {
             memset(SENDBUFFER, 0, SEND_BUF_SIZE);
             //1. 设置 rtp 头,12个字节
             init_rtsp_header(rtp_hdr,seq_num,ts_current,fu_pack_num==fu_pack_num-1);
 
             //2. 设置 rtp 荷载头部,2字节
-            fu_indicator_t * fu_ind = (fu_indicator_t *)&SENDBUFFER[12];
-            fu_header_t * fu_hdr = (fu_header_t *)&SENDBUFFER[13];
-            uint8_t nalu_header=nalu_buf[0];
+            fu_indicator_t * fu_ind = (fu_indicator_t *)&SENDBUFFER[RTP_HEADER_SIZE];
+            fu_header_t * fu_hdr = (fu_header_t *)&SENDBUFFER[RTP_HEADER_SIZE+1];
+
             int flag_type=fu_seq == 0?1:fu_seq ==fu_pack_num - 1?2:0;
             init_fragment_header(fu_ind,fu_hdr,nalu_header,flag_type);
 
             int data_size=fu_seq ==fu_pack_num - 1?last_fu_pack_size:RTP_PAYLOAD_MAX_SIZE;
-            memcpy(SENDBUFFER + 14, payload_buffer+ RTP_PAYLOAD_MAX_SIZE * fu_seq, data_size );//3. 填充nalu内容
-            size_t rtp_size = RTP_HEADER_SIZE + 2 + data_size;  /* rtp头 + nalu头 + nalu内容 */
+            memcpy(&SENDBUFFER[RTP_HEADER_SIZE+2], payload_buffer+ RTP_PAYLOAD_MAX_SIZE * fu_seq, data_size );//3. 填充nalu内容
+            size_t rtp_size = RTP_HEADER_SIZE + 2 + data_size;  /* rtp头 + fu + nalu内容 */
 
 
             packet.interleaved[2] = (rtp_size & 0xff00)>>8;
@@ -398,7 +402,7 @@ void client_handler(int accept_fd){
 //        std::cout<<method<<" "<<url<<std::endl;
 
 
-        //解析其他
+        //解析其他参数
         std::map<std::string, std::string> keyValueMap;
         for (int i = 1; i < vs.size()-1; ++i) {
             auto& input= vs[i];
@@ -426,19 +430,12 @@ void client_handler(int accept_fd){
 
             //start push stream
             RTSPSource source_1(FILENAME);
-//            RTSPSource source_2("/Users/zhanggxk/project/h264_to_rtp/tvt.h264");
             int len;
             int cnt=0;
             int ret=0;
 
 
             while (1){
-//                printf("%d\n",cnt++);
-//                if (cnt>200&& cnt<700){
-//                    ret=source_2.copy_nal_from_file(nal_buf, &len);
-//                } else{
-//                    ret=source_1.copy_nal_from_file(nal_buf, &len);
-//                }
                 ret=source_1.copy_nal_from_file(nal_buf, &len);
                 if (ret<0){
                     break;
@@ -478,22 +475,3 @@ int main(int argc,char *argv[]){
         client_handler(accept_fd);
     }
 }
-
-
-//int main(){
-//    rtp_header_t rtp_hdr;
-//    rtp_hdr.csrc_len = 0;
-//    rtp_hdr.extension = 0;
-//    rtp_hdr.padding = 0;
-//    rtp_hdr.version = 2;
-//    rtp_hdr.payload_type = H264;
-//     rtp_hdr.marker = 1;
-//    rtp_hdr.seq_no = htons(0x8899);
-//    rtp_hdr.timestamp = (0x11223344);
-//    rtp_hdr.ssrc = htonl(0xaabbccdd);
-//
-//    FILE *f= fopen("header.data","w");
-//    printf("%d\n",sizeof(rtp_hdr));
-//    fwrite(&rtp_hdr,sizeof (rtp_hdr),1,f);
-//    fclose(f);
-//}

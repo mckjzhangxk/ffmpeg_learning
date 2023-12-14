@@ -89,3 +89,7 @@ add_executable(rtsp_server rtsp_server/rtsp_server.cpp)
 add_executable(rtsp_tcp_server rtsp_server/rtsp_tcp_server.cpp)
 add_executable(rtsp_tcp_server_h265 rtsp_server/rtsp_tcp_server_h265.cpp)
 add_executable(proxy rtsp_server/proxy.cpp)
+
+
+
+add_executable(getopt_tutorial basic/filesystem/getopt_tutorial.cpp)

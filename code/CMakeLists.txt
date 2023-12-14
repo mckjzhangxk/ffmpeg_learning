@@ -24,12 +24,21 @@ message("---library path: ${RTMP_LIBRARY_DIRS}")
 message("------lib names: ${RTMP_LIBRARIES}")
 
 
+pkg_check_modules(X264 REQUIRED x264)
+message("---Find X264 library")
+message("---include path: ${X264_INCLUDE_DIRS}")
+message("---library path: ${X264_LIBRARY_DIRS}")
+message("------lib names: ${X264_LIBRARIES}")
+
+
 #头文件与库文件检索路径
 include_directories(${FFMPEG_INCLUDE_DIRS})
 link_directories(${FFMPEG_LIBRARY_DIRS})
 include_directories(${RTMP_INCLUDE_DIRS})
 link_directories(${RTMP_LIBRARY_DIRS})
 
+include_directories(${X264_INCLUDE_DIRS})
+link_directories(${X264_LIBRARY_DIRS})
 
 #常用工具
 add_executable(ffmpeg_log basic/ffmpeg_log.cpp)
@@ -144,6 +153,10 @@ target_link_libraries(packet_view ${FFMPEG_LIBRARIES})
 add_executable(h264ToTs excercise/h264ToTs.cpp)
 target_link_libraries(h264ToTs ${FFMPEG_LIBRARIES})
 
+
+
+add_executable(encode_with_libx264 basic/encode_decode/encode_with_libx264.cpp)
+target_link_libraries(encode_with_libx264 ${X264_LIBRARIES})
 
 
 

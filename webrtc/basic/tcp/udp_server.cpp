@@ -72,7 +72,7 @@ int main() {
         }
         char ip_buffer[128];
         inet_ntop(AF_INET,&remote_addr.sin_addr,ip_buffer,128);
-        printf("收到消息[%s:%d] 长度 %d :%s\n", ip_buffer, ntohs(remote_addr.sin_port),n,in_buf);
+        printf("收到消息[%s:%d] 长度 %d\n", ip_buffer, ntohs(remote_addr.sin_port),n);
 
 
         sendto(socket_fd,in_buf,MESSAGE_SIZE,0, (struct sockaddr *) &remote_addr,sizeof(remote_addr));

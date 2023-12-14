@@ -52,8 +52,15 @@ int open_connect_fd(const char* remoteIp,int remotePort){
 //    printf("%s\n",ip_str);
     return sockFd;
 }
+
+#define PGSIZE 4096 // bytes per page
+#define PGSHIFT 12  // bits of offset within a page
+
+#define PGROUNDUP(sz)  (((sz)+PGSIZE-1) & ~(PGSIZE-1))
+
 int main(int argc, char * *argv)
 {
+    
 //    uint32_t table_key = 0xdeadbeef;
 //    uint8_t k1 = table_key & 0xff,
 //            k2 = (table_key >> 8) & 0xff,
@@ -70,7 +77,6 @@ int main(int argc, char * *argv)
 //        val[i] ^= k3;
 //        val[i] ^= k4;
 //    }
-
     //没有起作用，为什么？
     signal(SIGPIPE, sigint_handler);
 

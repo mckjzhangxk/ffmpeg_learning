@@ -8,7 +8,9 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <vector>
 #include <thread>
+#include <vector>
 #include "rtp.h"
 
 #define RTP_PAYLOAD_MAX_SIZE        1400
@@ -18,14 +20,11 @@
 
 #define FD_SIZE 2
 #define NAL_BUF_SIZE                1500 * 250
-#define FILENAME "/Users/zhanggxk/project/h264_to_rtp/tvt.h264"
+//#define FILENAME "/Users/zhanggxk/project/h264_to_rtp/aa.h264"
+#define FILENAME "/Users/zhanggxk/Desktop/测试视频/my.h265"
 uint8_t nal_buf[NAL_BUF_SIZE];
-void sigint_handler(int sig) /* SIGINT handler */
-{
+bool is265 = true;
 
-    printf("捕捉到信号 %d\n", sig);
-
-}
 
 // 1-start 2-end,0
 void init_fragment_header(fu_indicator_t *fu_ind, fu_header_t *fu_hdr, uint8_t nalu_hdr, int frag_type = 0) {
@@ -38,6 +37,28 @@ void init_fragment_header(fu_indicator_t *fu_ind, fu_header_t *fu_hdr, uint8_t n
     fu_hdr->e = 0;
     fu_hdr->r = 0;
     fu_hdr->type = nalu_hdr & 0x1f;
+
+    switch (frag_type) {
+        case 1:
+            fu_hdr->s = 1;
+            break;
+        case 2:
+            fu_hdr->e = 1;
+            break;
+        default:
+            break;
+    }
+}
+
+void init_fragment_header(fu_indicator265_t *fu_ind, fu_header265_t *fu_hdr, uint8_t nalu_hdr, int frag_type = 0) {
+    fu_ind->f = (nalu_hdr & 0x80) >> 7;
+    fu_ind->type = 49;
+    fu_ind->nuh_layer_id = nalu_hdr & 0x01;
+
+
+    fu_hdr->s = 0;
+    fu_hdr->e = 0;
+    fu_hdr->type = (nalu_hdr & 0x7E) >> 1;
 
     switch (frag_type) {
         case 1:
@@ -167,9 +188,13 @@ public:
         return FD_ISSET(fd, &m_fd_ready_sets);
     }
 
-    void wait_incoming_packet() {
+    bool wait_incoming_packet() {
         m_fd_ready_sets = m_fd_sets;
         m_nReady = select(m_max_fd + 1, &m_fd_ready_sets, NULL, NULL, 0);
+        if (m_nReady < 0) {
+            return false;
+        }
+        return true;
     }
 
 private:
@@ -192,8 +217,6 @@ bool receive_data(int recv_fd, char *in_buf, int in_buf_size, int &out_n) {
             return false;
         }
     }
-
-
 }
 
 bool send_data(int send_fd, char *in_buf, int in_n) {
@@ -216,21 +239,22 @@ bool redirect_data(int recv_fd, int send_fd, char *in_buf, int in_buf_size, int 
     return true;
 }
 
-class RTSP{
+class RTSP {
 public:
-    RTSP(int fd):sockFd(fd){
+    RTSP(int fd) : sockFd(fd) {
 
     }
 
-    int  Send(void *buffer,int size){
-        int n=send(sockFd,buffer,size,0);
+    int Send(void *buffer, int size) {
+        int n = send(sockFd, buffer, size, 0);
         return n;
     }
+
     int sockFd;
 };
 
 
-void  init_rtsp_header(rtp_header_t *rtp_hdr,uint16_t& seq_num,uint32_t ts_current,int ssrc,int marker=0){
+void init_rtsp_header(rtp_header_t *rtp_hdr, uint16_t &seq_num, uint32_t ts_current, int ssrc, int marker = 0) {
 
     /*
      * 1. 设置 rtp 头
@@ -240,19 +264,23 @@ void  init_rtsp_header(rtp_header_t *rtp_hdr,uint16_t& seq_num,uint32_t ts_curre
     rtp_hdr->padding = 0;
     rtp_hdr->version = 2;
     rtp_hdr->payload_type = H264;
+    if (is265)
+        rtp_hdr->payload_type = H265;
     rtp_hdr->marker = marker;
-    printf("seq %d\n",seq_num);
+    printf("seq %d\n", seq_num);
     rtp_hdr->seq_no = htons(++seq_num % UINT16_MAX);
     rtp_hdr->timestamp = htonl(ts_current);
     rtp_hdr->ssrc = htonl(ssrc);
 
 }
-static int h264nal2rtp_send(int framerate, uint8_t *nalu_buf, int nalu_len,rtp_header_t* init_rtp_header,RTSP & rtsp,int init)
-{
+
+static int
+h264nal2rtp_send(int framerate, uint8_t *nalu_buf, int nalu_len, rtp_header_t *init_rtp_header, RTSP &rtsp, int init,
+                 bool is265 = false) {
     static uint32_t ts_current = init_rtp_header->timestamp;
     static uint16_t seq_num = init_rtp_header->seq_no;
 
-    if (init==1){
+    if (init == 1) {
         ts_current = init_rtp_header->timestamp;
         seq_num = init_rtp_header->seq_no;
     }
@@ -271,12 +299,9 @@ static int h264nal2rtp_send(int framerate, uint8_t *nalu_buf, int nalu_len,rtp_h
     rtp_packet_t packet;
     packet.interleaved[0] = '$';  // 与rtsp区分
     packet.interleaved[1] = 0;    // 区别rtp和rtcp。0-1
-    uint8_t* SENDBUFFER=packet.rtp_packet;
+    uint8_t *SENDBUFFER = packet.rtp_packet;
 
-    rtp_header_t *rtp_hdr=(rtp_header_t*)SENDBUFFER;
-
-
-
+    rtp_header_t *rtp_hdr = (rtp_header_t *) SENDBUFFER;
 
 
     if (nalu_len <= RTP_PAYLOAD_MAX_SIZE) {
@@ -287,54 +312,79 @@ static int h264nal2rtp_send(int framerate, uint8_t *nalu_buf, int nalu_len,rtp_h
         memset(SENDBUFFER, 0, SEND_BUF_SIZE);
 
         //1. 设置 rtp 头
-        init_rtsp_header(rtp_hdr,seq_num,ts_current,init_rtp_header->ssrc);
+        init_rtsp_header(rtp_hdr, seq_num, ts_current, init_rtp_header->ssrc);
         //2. 填充nal内容
-        memcpy(SENDBUFFER + RTP_HEADER_SIZE, nalu_buf, nalu_len );    /* 不拷贝nalu头 */
+        memcpy(SENDBUFFER + RTP_HEADER_SIZE, nalu_buf, nalu_len);    /* 不拷贝nalu头 */
 
         //3. 发送打包好的rtp到客户端
 
         // rtp包载荷大小
-        int rtp_size=RTP_HEADER_SIZE+nalu_len;
-        packet.interleaved[2] = (rtp_size & 0xff00)>>8;
+        int rtp_size = RTP_HEADER_SIZE + nalu_len;
+        packet.interleaved[2] = (rtp_size & 0xff00) >> 8;
         packet.interleaved[3] = rtp_size & 0xff;
 
-        if(rtsp.Send((void *)&packet, 4+RTP_HEADER_SIZE + nalu_len)<=0){
+        if (rtsp.Send((void *) &packet, 4 + RTP_HEADER_SIZE + nalu_len) <= 0) {
             return -1;
         }
 
     } else {
         //FU-A分割
 
-        int nalu_len_minus_one=nalu_len-1; //去掉nalu头部
-        uint8_t *payload_buffer=nalu_buf + 1;
+        int nalu_len_minus_one = nalu_len - 1; //去掉nalu头部
+        uint8_t *payload_buffer = nalu_buf + 1;
 
+        if (is265) {
+            nalu_len_minus_one = nalu_len_minus_one - 1;
+            payload_buffer = payload_buffer + 1;
+        }
         /* nalu 需要分片发送时分割的个数 */
-        int fu_pack_num = nalu_len_minus_one % RTP_PAYLOAD_MAX_SIZE ? (nalu_len_minus_one / RTP_PAYLOAD_MAX_SIZE + 1) : nalu_len_minus_one / RTP_PAYLOAD_MAX_SIZE;
+        int fu_pack_num = nalu_len_minus_one % RTP_PAYLOAD_MAX_SIZE ? (nalu_len_minus_one / RTP_PAYLOAD_MAX_SIZE + 1) :
+                          nalu_len_minus_one / RTP_PAYLOAD_MAX_SIZE;
         /* 最后一个分片的大小 */
-        int last_fu_pack_size = nalu_len_minus_one % RTP_PAYLOAD_MAX_SIZE ? nalu_len_minus_one % RTP_PAYLOAD_MAX_SIZE : RTP_PAYLOAD_MAX_SIZE;
+        int last_fu_pack_size = nalu_len_minus_one % RTP_PAYLOAD_MAX_SIZE ? nalu_len_minus_one % RTP_PAYLOAD_MAX_SIZE
+                                                                          : RTP_PAYLOAD_MAX_SIZE;
 
 
         for (int fu_seq = 0; fu_seq < fu_pack_num; fu_seq++) {
             memset(SENDBUFFER, 0, SEND_BUF_SIZE);
             //1. 设置 rtp 头,12个字节
-            init_rtsp_header(rtp_hdr,seq_num,ts_current,init_rtp_header->ssrc,fu_pack_num==fu_pack_num-1);
+            init_rtsp_header(rtp_hdr, seq_num, ts_current, init_rtp_header->ssrc, fu_pack_num == fu_pack_num - 1);
 
             //2. 设置 rtp 荷载头部,2字节
-            fu_indicator_t * fu_ind = (fu_indicator_t *)&SENDBUFFER[12];
-            fu_header_t * fu_hdr = (fu_header_t *)&SENDBUFFER[13];
-            uint8_t nalu_header=nalu_buf[0];
-            int flag_type=fu_seq == 0?1:fu_seq ==fu_pack_num - 1?2:0;
-            init_fragment_header(fu_ind,fu_hdr,nalu_header,flag_type);
+            int flag_type = fu_seq == 0 ? 1 : fu_seq == fu_pack_num - 1 ? 2 : 0;
 
-            int data_size=fu_seq ==fu_pack_num - 1?last_fu_pack_size:RTP_PAYLOAD_MAX_SIZE;
-            memcpy(SENDBUFFER + 14, payload_buffer+ RTP_PAYLOAD_MAX_SIZE * fu_seq, data_size );//3. 填充nalu内容
-            size_t rtp_size = RTP_HEADER_SIZE + 2 + data_size;  /* rtp头 + nalu头 + nalu内容 */
+            if (is265) {
+                fu_indicator265_t *fu_ind = (fu_indicator265_t *) &SENDBUFFER[RTP_HEADER_SIZE];
+                SENDBUFFER[13] = nalu_buf[1];
+                fu_header265_t *fu_hdr = (fu_header265_t *) &SENDBUFFER[RTP_HEADER_SIZE + 2];
+
+                uint8_t nalu_header = nalu_buf[0];
+                init_fragment_header(fu_ind, fu_hdr, nalu_header, flag_type);
+            } else {
+                fu_indicator_t *fu_ind = (fu_indicator_t *) &SENDBUFFER[RTP_HEADER_SIZE];
+                fu_header_t *fu_hdr = (fu_header_t *) &SENDBUFFER[RTP_HEADER_SIZE + 1];
+                uint8_t nalu_header = nalu_buf[0];
+                init_fragment_header(fu_ind, fu_hdr, nalu_header, flag_type);
+            }
 
 
-            packet.interleaved[2] = (rtp_size & 0xff00)>>8;
+            int data_size = fu_seq == fu_pack_num - 1 ? last_fu_pack_size : RTP_PAYLOAD_MAX_SIZE;
+            size_t rtp_size = 0;
+            if (is265) {
+                memcpy(SENDBUFFER + RTP_HEADER_SIZE + 3, payload_buffer + RTP_PAYLOAD_MAX_SIZE * fu_seq,
+                       data_size);//3. 填充nalu内容
+                rtp_size = RTP_HEADER_SIZE + 3 + data_size;  /* rtp头 + nalu头 + nalu内容 */
+            } else {
+                memcpy(SENDBUFFER + RTP_HEADER_SIZE + 2, payload_buffer + RTP_PAYLOAD_MAX_SIZE * fu_seq,
+                       data_size);//3. 填充nalu内容
+                rtp_size = RTP_HEADER_SIZE + 2 + data_size;  /* rtp头 + nalu头 + nalu内容 */
+            }
+
+
+            packet.interleaved[2] = (rtp_size & 0xff00) >> 8;
             packet.interleaved[3] = rtp_size & 0xff;
 
-            if (rtsp.Send((void *)&packet,4+rtp_size)<=0){
+            if (rtsp.Send((void *) &packet, 4 + rtp_size) <= 0) {
                 return -1;
             }
 
@@ -349,14 +399,14 @@ static int h264nal2rtp_send(int framerate, uint8_t *nalu_buf, int nalu_len,rtp_h
 class Inceptor {
     struct Fragment {
         int marker;
-        char data[RTP_PAYLOAD_MAX_SIZE+4];
+        char data[RTP_PAYLOAD_MAX_SIZE + 4];
         int size;
         int type;
     };
 
     class Fragments {
     public:
-        Fragments(RTSPSource *source) : m_source(source),m_pos(10000) {
+        Fragments(RTSPSource *source) : m_source(source), m_pos(10000) {
 
         }
 
@@ -371,11 +421,13 @@ class Inceptor {
                 //read one valid packet
                 while (true) {
                     ret = m_source->copy_nal_from_file(nalu_buf, &nalu_len);
+                    printf("ret %d\n",ret);
                     if (ret > 0)
                         break;
                     else if (ret < 0) {
                         m_source->Reset();
                     }
+
                 }
 
                 //
@@ -383,12 +435,17 @@ class Inceptor {
                     Fragment fragment;
                     fragment.marker = 0;
                     fragment.size = nalu_len;
-                    fragment.type=1;
+                    fragment.type = 1;
                     memcpy(fragment.data, nalu_buf, nalu_len);
                     m_fragments.emplace_back(fragment);
                 } else {
                     int nalu_len_minus_one = nalu_len - 1; //去掉nalu头部
                     uint8_t *payload_buffer = nalu_buf + 1;
+                    if (is265) {
+                        nalu_len_minus_one = nalu_len_minus_one - 1;
+                        payload_buffer = payload_buffer + 1;
+                    }
+
                     /* nalu 需要分片发送时分割的个数 */
                     int fu_pack_num =
                             nalu_len_minus_one % RTP_PAYLOAD_MAX_SIZE ? (nalu_len_minus_one / RTP_PAYLOAD_MAX_SIZE + 1)
@@ -400,25 +457,50 @@ class Inceptor {
 
                     for (int fu_seq = 0; fu_seq < fu_pack_num; fu_seq++) {
                         Fragment fragment;
-                        fragment.type=2;
+                        fragment.type = 2;
 
-                        fu_indicator_t *fu_ind = (fu_indicator_t *) &fragment.data[0];
-                        fu_header_t *fu_hdr = (fu_header_t *) &fragment.data[1];
-                        uint8_t nalu_header = nalu_buf[0];
+//                        fu_indicator_t *fu_ind = (fu_indicator_t *) &fragment.data[0];
+//                        fu_header_t *fu_hdr = (fu_header_t *) &fragment.data[1];
+//                        uint8_t nalu_header = nalu_buf[0];
 
+
+                        //2. 设置 rtp 荷载头部,2字节
                         int flag_type = fu_seq == 0 ? 1 : fu_seq == fu_pack_num - 1 ? 2 : 0;
-                        if (flag_type==2){
-                            fragment.marker = 1;
-                            fragment.size = last_fu_pack_size;
-                        } else{
-                            fragment.marker = 0;
-                            fragment.size = RTP_PAYLOAD_MAX_SIZE;
+
+                        if (is265) {
+                            fu_indicator265_t *fu_ind = (fu_indicator265_t *) &fragment.data[0];
+                            fragment.data[1] = nalu_buf[1];
+                            fu_header265_t *fu_hdr = (fu_header265_t *) &fragment.data[2];
+
+                            uint8_t nalu_header = nalu_buf[0];
+                            init_fragment_header(fu_ind, fu_hdr, nalu_header, flag_type);
+                        } else {
+                            fu_indicator_t *fu_ind = (fu_indicator_t *) &fragment.data[0];;
+                            fu_header_t *fu_hdr = (fu_header_t *) &fragment.data[1];;
+                            uint8_t nalu_header = nalu_buf[0];
+                            init_fragment_header(fu_ind, fu_hdr, nalu_header, flag_type);
                         }
-                        init_fragment_header(fu_ind, fu_hdr, nalu_header, flag_type);
+
+                        if (flag_type == 2) {
+                            fragment.marker = 1;
+                            fragment.size = last_fu_pack_size + 2;
+                        } else {
+                            fragment.marker = 0;
+                            fragment.size = RTP_PAYLOAD_MAX_SIZE + 2;
+                        }
+                        if (is265) {
+                            fragment.size += 1;
+                        }
+//                        init_fragment_header(fu_ind, fu_hdr, nalu_header, flag_type);
 
                         int data_size = fu_seq == fu_pack_num - 1 ? last_fu_pack_size : RTP_PAYLOAD_MAX_SIZE;
 
-                        memcpy(&fragment.data[2], payload_buffer + RTP_PAYLOAD_MAX_SIZE * fu_seq, data_size);
+                        if (is265) {
+                            memcpy(&fragment.data[3], payload_buffer + RTP_PAYLOAD_MAX_SIZE * fu_seq, data_size);
+                        } else {
+                            memcpy(&fragment.data[2], payload_buffer + RTP_PAYLOAD_MAX_SIZE * fu_seq, data_size);
+                        }
+
                         m_fragments.emplace_back(fragment);
                     }
                 }
@@ -454,47 +536,68 @@ public:
         m_previous_status = false;
     }
 
+    bool isRtpPacket(char *buf, int n) {
+        if (n < 6)
+            return false;
+        rtp_header_t *rtp_header = (rtp_header_t *) &buf[4];
+
+//        bool ret= ('$' == buf[0])&&(0==buf[1])&&(rtp_header->version==2)&&(rtp_header->padding==0)&&(rtp_header->extension==0)&&(rtp_header->csrc_len==0)&&(rtp_header->payload_type==H264);
+        bool ret = '$' == buf[0];
+        if (ret) {
+            short *s = (short *) &buf[2];
+
+            short rtp_size = ntohs(*s);
+//            printf("rtp_size %d\n",rtp_size);
+        }
+        return ret;
+    }
+
+    //截获buf,大小n
+    //fd是要发生数据的一端
     bool handle(int fd, char *buf, int n) {
+        static rtp_header_t rtp_header;
         if (m_flag) {
+            if (m_previous_status== false&& (isRtpPacket(buf,n)&&canIncept(&buf[4 + RTP_HEADER_SIZE] ))) {
+                m_previous_status = true;
+                rtp_header = *((rtp_header_t *) &buf[4]);
+
+                //大端序->小端序
+                rtp_header.seq_no = ntohs(rtp_header.seq_no);
+                rtp_header.timestamp = ntohl(rtp_header.timestamp);
+                rtp_header.ssrc = ntohl(rtp_header.ssrc);
+            } else if(m_previous_status){
+                rtp_header.seq_no++;
+                rtp_header.timestamp+=90000/30;
+            }
             //rtp packet
-            if ('$' == buf[0]) {
-
+            if (m_previous_status) {
                 //已经拦截成功了，后续可以继续拦截，否则必须等待一个新的开始包
-                if (m_previous_status || canIncept(&buf[16])) {
-                    m_previous_status = true;
-                    //转发。。。
-                    rtp_header_t *rtp_header = (rtp_header_t *) &buf[4];
+                //转发。。。
 
-                    //大端序->小端序
-                    rtp_header->seq_no = ntohs(rtp_header->seq_no);
-                    rtp_header->timestamp = ntohl(rtp_header->timestamp);
-                    rtp_header->ssrc = ntohl(rtp_header->ssrc);
+                //不断转发
 
-                    //不断转发
+//                    RTSPSource source_2(FILENAME);
+//                    int len;
+//                    int cnt=0;
+//                    int ret=0;
+//
+//                    RTSP rtsp(fd);
+//                    while (m_flag){
+//                        printf("%d\n",cnt++);
+//                        ret=source_2.copy_nal_from_file(nal_buf, &len);
+//                        if (ret<0){
+//                            break;
+//                        }
+//                        h264nal2rtp_send(25, nal_buf, len, rtp_header,rtsp,cnt, is265);
+//
+//                        usleep(1000*33);
+//                    }
+                //不断转发 结束
+                return write_rtp_packet(fd, rtp_header, buf, n);
 
-                    RTSPSource source_2(FILENAME);
-                    int len;
-                    int cnt=0;
-                    int ret=0;
 
-                    RTSP rtsp(fd);
-                    while (m_flag){
-                        printf("%d\n",cnt++);
-                        ret=source_2.copy_nal_from_file(nal_buf, &len);
-                        if (ret<0){
-                            break;
-                        }
-                        h264nal2rtp_send(25, nal_buf, len, rtp_header,rtsp,cnt);
-
-                        usleep(1000*33);
-                    }
-
-                    return true;
-                } else {
-                    goto DIRECT_SEND;
-                }
-
-            } else{
+            } else {
+                printf("here\n");
                 goto DIRECT_SEND;
             }
         } else {
@@ -530,15 +633,20 @@ private:
         }
     }
 
-    bool write_rtp_packet(int fd, rtp_header_t *rtp_header) {
+    bool write_rtp_packet(int fd, rtp_header_t rtp_header, char *buf, int n) {
+
+        rtp_header.seq_no = htons(rtp_header.seq_no);
+        rtp_header.timestamp = htonl(rtp_header.timestamp);
+        rtp_header.ssrc = htonl(rtp_header.ssrc);
+
 
         Fragment fragment = m_fragments->getFragment();
-//        Fragment fragment;
-//        fragment.size=100;
-//        memset(fragment.data,0,fragment.size);
+
+
 
         // rtp包载荷大小
         int rtp_size = RTP_HEADER_SIZE + fragment.size;
+
 
         rtp_packet_t packet;
         packet.interleaved[0] = '$';  // 与rtsp区分
@@ -550,15 +658,18 @@ private:
         uint8_t *SENDBUFFER = packet.rtp_packet;
 
         //1. 设置 rtp 头
-        rtp_header->marker = fragment.marker;
-        memcpy(SENDBUFFER, rtp_header, RTP_HEADER_SIZE);
+        rtp_header.marker = fragment.marker;
+//        rtp_header->timestamp
+        memcpy(SENDBUFFER, &rtp_header, RTP_HEADER_SIZE);
         //2. 填充nal内容
         memcpy(SENDBUFFER + RTP_HEADER_SIZE, fragment.data, fragment.size);    /* 不拷贝nalu头 */
 
         //3. 发送打包好的rtp到客户端
 
-        printf("%d  %d\n",fragment.type,fragment.size);
-        return send_data(fd, (char *) &packet, 4 + RTP_HEADER_SIZE + fragment.size);
+//        printf("%d  %d\n", fragment.type, fragment.size);
+
+
+        return send_data(fd, (char *) &packet, 4 + rtp_size);
     }
 
     bool m_flag;
@@ -570,10 +681,27 @@ private:
 
 Inceptor g_interceptor;
 
+
+void sigint_handler(int sig) /* SIGINT handler */
+{
+
+    if (sig == SIGUSR1) {
+        g_interceptor.begin();
+    }
+    if (sig == SIGUSR2) {
+        g_interceptor.end();
+    }
+    printf("捕捉到信号 %d\n", sig);
+
+}
+
+
 void client_request_handler(int accept_fd) {
     char in_buf[MESSAGE_SIZE] = {0,};
+    //这里是要hook的服务器
 
-    int serverfd = open_connect_fd("127.0.0.1", 7778);
+    int serverfd = open_connect_fd("114.34.141.233", 554);
+//    int serverfd = open_connect_fd("127.0.0.1", 7778);
 
 
     if (serverfd == -1) {
@@ -588,9 +716,13 @@ void client_request_handler(int accept_fd) {
 
 
     while (true) {
-        ioSet.wait_incoming_packet();
+        if (!ioSet.wait_incoming_packet()) {
+            continue;
+        }
+
         memset(in_buf, 0, MESSAGE_SIZE);
         int n = 0;
+        //来自rtsp的响应
         if (ioSet.check_client(serverfd)) {
             bool ret = receive_data(serverfd, in_buf, MESSAGE_SIZE, n);
 
@@ -603,7 +735,8 @@ void client_request_handler(int accept_fd) {
             }
 
         }
-        if (ioSet.check_client(accept_fd)) {
+        if (ioSet.check_client(accept_fd)) {//客户端直接转发给服务器
+            //转发给rtsp服务器
             bool ret = redirect_data(accept_fd, serverfd, in_buf, MESSAGE_SIZE, n);
             if (!ret) {
                 break;
@@ -634,6 +767,7 @@ void client_command_handler(int accept_fd) {
     close(accept_fd);
 }
 
+//客户端的连接请求
 int AcceptConnection(int socket_fd) {
     socklen_t addr_len = sizeof(struct sockaddr_in);
     //accept an new connection, block......
@@ -645,13 +779,10 @@ int AcceptConnection(int socket_fd) {
     set_fd_noblock(accept_fd);
     return accept_fd;
 }
-//fork方式带来的问题
 
-//1)资源可能会被长期占用
-//2)分配子进程开销大
 int main() {
-//    signal(SIGUSR1, sigint_handler);
-    signal(SIGCONT, sigint_handler);
+    signal(SIGUSR1, sigint_handler);
+    signal(SIGUSR2, sigint_handler);
     signal(SIGPIPE, sigint_handler);
 
     int socket_fd = open_listen_fd(7777);  //proxy
@@ -661,11 +792,11 @@ int main() {
     IO_Set ioSet;
     ioSet.add_client(socket_fd);
     ioSet.add_client(socket_fd2);
-
 //    g_interceptor.begin();
     //////////////////////////////接受连接///////////////////////////
     while (true) {
-        ioSet.wait_incoming_packet();
+        bool r = ioSet.wait_incoming_packet();
+        if (!r) continue;
         //来自播放器的请求
         if (ioSet.check_client(socket_fd)) {
             int accept_fd = AcceptConnection(socket_fd);
@@ -682,14 +813,9 @@ int main() {
             if (accept_fd < 0) {
                 continue;
             }
-            client_command_handler(accept_fd);
+            std::thread thread(client_command_handler, accept_fd);
+            thread.detach();
         }
-
-
     }
-
-    printf("服务器关闭 \n");
-    close(socket_fd);
-    close(socket_fd2);
 }
 

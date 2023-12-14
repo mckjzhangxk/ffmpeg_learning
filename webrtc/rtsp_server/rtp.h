@@ -4,9 +4,9 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
-
 #define NAL_MAX     4000000
 #define H264        96
+#define H265        98
 #define G711        8
 
 typedef struct rtp_header {
@@ -141,7 +141,7 @@ public:
 
         do {
             ret = fread1(tmpbuf2, 1, 1);
-            if (!ret) {
+            if (ret<=0) {
                 return -1;
             }
             if (!flag && tmpbuf2[0] != 0x0) {
@@ -199,8 +199,7 @@ public:
     } /* static int copy_nal_from_file(FILE *fp, char *buf, int *len) */
 
     void Reset(){
-//        fclose(fp);
-//        fp = fopen(filename.data(), "r");
+        buffer_pos=0;
     }
     FILE *fp;
     std::string filename;

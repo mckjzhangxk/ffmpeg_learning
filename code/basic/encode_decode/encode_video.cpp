@@ -23,8 +23,8 @@ extern "C"{
 
 #define  FRAME_WIDTH  2940
 #define  FRAME_HEIGHT 1912
-#define  FPS 20
-#define  SECOND 1
+#define  FPS 5
+#define  SECOND 10
 
 
 void printPackageInfo(AVPacket* pkg,int iters){
@@ -175,7 +175,7 @@ int main(int argc,char* argv[]){
     avCodecContext->pix_fmt=AV_PIX_FMT_YUV420P;
 
 
-    //甚至帧率
+    //设置帧率
     avCodecContext->time_base=(AVRational){1,FPS};//帧与帧之间间隔的时间
     avCodecContext->framerate=(AVRational){FPS,1}; //
     //设置码率

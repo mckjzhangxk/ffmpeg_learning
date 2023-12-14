@@ -61,7 +61,7 @@ private:
 #define SAMPLES 600
 #define FILE_PREFIX "video"
 #define DEVICE_NAME "1"
-#define F
+
 int main(){
     char errbuf[128]={0};
     av_log_set_level(AV_LOG_INFO);
@@ -120,10 +120,10 @@ int main(){
            av_get_pix_fmt_name(codec_context->pix_fmt),
            codec_context->bit_rate
     );
-    av_log(NULL,AV_LOG_WARNING,"ffplay -video_size %dx%d -pixel_format %s %s.yuv\n",
+//    av_get_pix_fmt_name(codec_context->pix_fmt),
+    av_log(NULL,AV_LOG_WARNING,"ffplay -video_size %dx%d -pixel_format yuv420p %s.yuv\n",
            codec_context->width,
            codec_context->height,
-           av_get_pix_fmt_name(codec_context->pix_fmt),
            FILE_PREFIX
     );
 //

@@ -12,8 +12,8 @@
 
 
 void set_fd_noblock(int fd) {
-    int flag = fcntl(fd, F_GETFD);
-    fcntl(fd, F_SETFD, flag | O_NONBLOCK);
+    int flag = fcntl(fd, F_GETFL);
+    fcntl(fd, F_SETFL, flag | O_NONBLOCK);
 }
 
 int open_listen_fd(int port) {

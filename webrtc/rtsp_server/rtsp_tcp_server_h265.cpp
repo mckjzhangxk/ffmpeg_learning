@@ -416,24 +416,22 @@ void client_handler(int accept_fd){
 
             //start push stream
             RTSPSource source_1("/Users/zhanggxk/Desktop/测试视频/jojo.h265");
-            RTSPSource source_2("/Users/zhanggxk/Desktop/测试视频/my.h265");
+//            RTSPSource source_2("/Users/zhanggxk/Desktop/测试视频/my.h265");
             int len;
             int cnt=0;
             int ret=0;
 
 
             while (1){
-                printf("%d\n",cnt);
-                if (cnt++>100&& cnt<150){
-                    ret=source_2.copy_nal_from_file(nal_buf, &len);
-                } else{
-                    ret=source_1.copy_nal_from_file(nal_buf, &len);
-                }
+                printf("%d\n",cnt++);
+                ret=source_1.copy_nal_from_file(nal_buf, &len);
                 if (ret<0){
                     break;
                 }
-                h264nal2rtp_send(25, nal_buf, len, rtsp);
-
+                ret=h264nal2rtp_send(25, nal_buf, len, rtsp);
+                if (ret<0){
+                    break;
+                }
                 usleep(1000*25);
             }
         }
@@ -446,9 +444,12 @@ void client_handler(int accept_fd){
 
 
 
+void sigpipe_handler(int sig){
 
+}
 
 int main(int argc,char *argv[]){
+    signal(SIGPIPE, sigpipe_handler);
     g_buffer=new Buffer;
     int socket_fd=open_listen_fd(7778);
     while (true){
@@ -463,22 +464,3 @@ int main(int argc,char *argv[]){
         client_handler(accept_fd);
     }
 }
-
-
-//int main(){
-//    rtp_header_t rtp_hdr;
-//    rtp_hdr.csrc_len = 0;
-//    rtp_hdr.extension = 0;
-//    rtp_hdr.padding = 0;
-//    rtp_hdr.version = 2;
-//    rtp_hdr.payload_type = H264;
-//     rtp_hdr.marker = 1;
-//    rtp_hdr.seq_no = htons(0x8899);
-//    rtp_hdr.timestamp = (0x11223344);
-//    rtp_hdr.ssrc = htonl(0xaabbccdd);
-//
-//    FILE *f= fopen("header.data","w");
-//    printf("%d\n",sizeof(rtp_hdr));
-//    fwrite(&rtp_hdr,sizeof (rtp_hdr),1,f);
-//    fclose(f);
-//}
