@@ -54,6 +54,7 @@ add_executable(remuxing-from-memory basic/remux/remuxing-from-memory.cpp)
 add_executable(extractAudio basic/remux/extractAudio.cpp)
 add_executable(extractVideo basic/remux/utils.c basic/remux/extractVideo.c)
 add_executable(cutVideo basic/remux/cutVideo.cpp)
+add_executable(mp4parser basic/remux/mp4parser.cpp)
 
 #设备的操作
 add_executable(device_open device/opendevice.cpp)
@@ -157,6 +158,9 @@ target_link_libraries(h264ToTs ${FFMPEG_LIBRARIES})
 
 add_executable(encode_with_libx264 basic/encode_decode/encode_with_libx264.cpp)
 target_link_libraries(encode_with_libx264 ${X264_LIBRARIES})
+
+
+
 
 
 

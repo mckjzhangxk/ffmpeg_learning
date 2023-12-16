@@ -88,7 +88,7 @@ add_executable(socket_pair basic/pipe/socketpair_demo.cpp)
 add_executable(rtsp_server rtsp_server/rtsp_server.cpp)
 add_executable(rtsp_tcp_server rtsp_server/rtsp_tcp_server.cpp)
 add_executable(rtsp_tcp_server_h265 rtsp_server/rtsp_tcp_server_h265.cpp)
-add_executable(proxy rtsp_server/proxy.cpp)
+add_executable(proxy rtsp_server/network_io.cpp rtsp_server/proxy.cpp)
 
 
 

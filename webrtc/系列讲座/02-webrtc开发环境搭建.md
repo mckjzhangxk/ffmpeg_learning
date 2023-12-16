@@ -32,5 +32,5 @@ ninja -C out/Default
 
 
 #最后生成vs studio的工程文件
-gn gen - -ide=vs outlDefault
+gn gen --ide=vs outlDefault
 ```

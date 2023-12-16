@@ -1,17 +1,14 @@
 #ifndef _H264TORTP_H
 #define _H264TORTP_H
-
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
-#define NAL_MAX     4000000
 #define H264        96
 #define H265        98
-#define G711        8
 
 typedef struct rtp_header {
     /* little-endian */
-    //我之前一直有疑问，为什么version 存在最后，现在明白了，version是追高为，所以存在最后面
+    //我之前一直有疑问，为什么version 存在最后，现在明白了，version是最高位，所以存在最后面
     /* byte 0 */
     uint8_t csrc_len:       4;  /* bit: 0~3 */
     uint8_t extension:      1;  /* bit: 4 */
@@ -129,74 +126,80 @@ public:
         buffer_pos+=m;
         return nitms;
     }
+    //当函数碰到起始码001或者0001的时候，返回已经读取非起始码的数据长度
+    //buf,len表示 nalu的内容，不包括startcode
+    //函数可能返回0,说明只读取了起始码
+
     int copy_nal_from_file( uint8_t *buf, int *len)
     {
-        char tmpbuf[4];     /* i have forgotten what this var mean */
-        char tmpbuf2[1];    /* i have forgotten what this var mean */
-        int flag = 0;       /* i have forgotten what this var mean */
+        char tmpbuf[4];     /* 临时存放起始码 */
+        char c;    /* 每次输入的字符串 */
+        int flag = 0;       //flag=1 找到0 ,flag=2,找到00,flag=3,找到000
         int ret;
 
 
         *len = 0;
 
         do {
-            ret = fread1(tmpbuf2, 1, 1);
+            ret = fread1(&c, 1, 1);
             if (ret<=0) {
                 return -1;
             }
-            if (!flag && tmpbuf2[0] != 0x0) {
-                buf[*len] = tmpbuf2[0];
+            if (!flag && c != 0x0) {//非起始码，保存到buf中
+                buf[*len] = c;
                 (*len)++;
                 // debug_print("len is %d", *len);
-            } else if (!flag && tmpbuf2[0] == 0x0) {
+            } else if (!flag && c == 0x0) {//第一次找到0
                 flag = 1;
-                tmpbuf[0] = tmpbuf2[0];
+                tmpbuf[0] =0;
             } else if (flag) {
                 switch (flag) {
-                    case 1:
-                        if (tmpbuf2[0] == 0x0) {
+                    case 1://已经找到0
+                        if (c == 0x0) {
                             flag++;
-                            tmpbuf[1] = tmpbuf2[0];
-                        } else {
+                            tmpbuf[1] = 0;
+                        } else {//非起始码，把 0 c输出到buf中
                             flag = 0;
-                            buf[*len] = tmpbuf[0];
-                            (*len)++;
-                            buf[*len] = tmpbuf2[0];
-                            (*len)++;
+                            buf[*len] = 0;
+                            buf[(*len)+1] = c;
+                            (*len)+=2;
                         }
                         break;
-                    case 2:
-                        if (tmpbuf2[0] == 0x0) {
+                    case 2://已经找到00
+                        if (c == 0x0) {
                             flag++;
-                            tmpbuf[2] = tmpbuf2[0];
-                        } else if (tmpbuf2[0] == 0x1) {
+                            tmpbuf[2] = 0;
+                        } else if (c == 0x1) {
+                            flag = 0;
+                            return *len;
+                        } else {//把00c输出到buf
+                            flag = 0;
+                            buf[*len] = 0;
+                            buf[(*len)+1] = 0;
+                            buf[(*len)+2] = c;
+                            (*len)+=3;
+                        }
+                        break;
+                    case 3://已经找到000
+                        if (c == 0x1) {//0001
                             flag = 0;
                             return *len;
                         } else {
                             flag = 0;
-                            buf[*len] = tmpbuf[0];
-                            (*len)++;
-                            buf[*len] = tmpbuf[1];
-                            (*len)++;
-                            buf[*len] = tmpbuf2[0];
-                            (*len)++;
+                            buf[*len] = 0;
+                            buf[(*len)+1] = 0;
+                            buf[(*len)+2] = 0;
+                            buf[(*len)+3] = c;
+                            (*len)+=4;
                         }
                         break;
-                    case 3:
-                        if (tmpbuf2[0] == 0x1) {
-                            flag = 0;
-                            return *len;
-                        } else {
-                            flag = 0;
-                            break;
-                        }
                 }
             }
 
         } while (1);
 
         return *len;
-    } /* static int copy_nal_from_file(FILE *fp, char *buf, int *len) */
+    }
 
     void Reset(){
         buffer_pos=0;
