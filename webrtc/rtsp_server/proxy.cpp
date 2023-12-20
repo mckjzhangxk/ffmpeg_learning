@@ -17,8 +17,12 @@
 #define FD_SIZE 2
 #define NAL_BUF_SIZE                1500 * 250
 #define FILENAME "/Users/zhanggxk/Desktop/测试视频/my.h265"
-#define RTSP_VIDEO_IP "114.34.141.233"
+//#define RTSP_VIDEO_IP "114.34.141.233"
+#define RTSP_VIDEO_IP "1.226.190.115"
+#define RTSP_VIDEO_PORT 6036
 #define RSTP_INTERLEAVE_SIZE 4
+
+#define MAGIC_SIZE  ((RSTP_INTERLEAVE_SIZE+RTP_HEADER_SIZE+3-1))
 
 extern bool receive_data(int recv_fd, char *in_buf, int in_buf_size, int &out_n);
 
@@ -437,9 +441,11 @@ class Inceptor {
     public:
         RTSPReader() : position(-1), prepend(0) {}
 
-        int read(char *buf, int n) {
-            static int packet=0;
-            char * buff=buf;
+        int read(char *buf, int n, std::vector<int> &rtp_postions) {
+            static int packet = 0;
+            char *buff = buf;
+
+            int offset=prepend;
             //第一次没有初始化
             if (position == -1) {
                 if (buf[0] == '$') {
@@ -449,13 +455,10 @@ class Inceptor {
                 }
             }
             char origin_buf[prepend + n];
-            memcpy(origin_buf, position_buf, prepend);
+            memcpy(origin_buf, prepend_buf, prepend);
             memcpy(origin_buf + prepend, buf, n);
-
-            if (prepend) {
-                n+=prepend;
-                prepend = 0;
-            }
+            n += prepend;
+            prepend = 0;
 
             if (position >= n) {
                 position -= n;
@@ -463,44 +466,43 @@ class Inceptor {
             }
 
 
-            while (position + 3 < n) {
+            while (position + MAGIC_SIZE < n) {
                 buf = &origin_buf[position];
-                bool exit= false;
-                if(buf[0]!='$'){
-                    int reamined=n-position;
+                bool exit = false;
 
-                    for (int i = 1; i <reamined ; ++i) {
-                        buf+=1;
-                        position+=1;
-                        if (buf[0]=='$'){
-                            break;
-                        }
-                    }
-                    if (position+3<n){
-                        buf = &origin_buf[position];
-                    } else{
-                        exit= true;
-                    }
-
+                //监测是否是是合法的rtsp leave包
+                int reamined = n - position;
+                for (int i = 1; i < reamined && (buf[0] != '$'); ++i) {
+                    buf += 1;
+                    position += 1;
+                }
+                if (position + MAGIC_SIZE < n) {
+                    buf = &origin_buf[position];
+                } else {
+                    exit = true;
                 }
 
-                if (exit){
+                if (exit) {
                     break;
                 }
+                rtp_postions.push_back(position+RSTP_INTERLEAVE_SIZE-offset);
 
                 short rtp_size = ntohs(*(short *) &buf[2]);
                 if (rtp_size < 0) {
-                    position=0;
+                    position = 0;
                     return -1;
                 }
-                printRtpInfo(buf,n,packet);
+                printRtpInfo(buf, n, packet);
                 position += rtp_size + RSTP_INTERLEAVE_SIZE;
             }
             if (position >= n) {
                 position -= n;
-            } else {//这里没有读取到rtp_size,所以没法计算下次进入后的position
+            } else {
+                //这里表示虽然从origin_buf[position]监测到了这是一个rtsp，但是当前rtsp被
+                //分割成了2个数据包（当前无法获得从position开始MAGIC_SIZE个的字节），所以把当前的
+                //这段rtsp缓存到prepend_buf中，等到下次收到数据，追加到头部一起分析。
                 for (int i = position; i < n; ++i) {
-                    position_buf[i - position] = origin_buf[i];
+                    prepend_buf[i - position] = origin_buf[i];
                     prepend++;
                 }
                 position = 0;
@@ -510,21 +512,28 @@ class Inceptor {
             return 0;
         }
 
-        void printRtpInfo(char *buf,int n,int p) {
+
+        int get_rtp_packet(char *buf,std::vector<int> &rtp_postions){
+            for (auto pos:rtp_postions) {
+                rtp_header_t* rtp=(rtp_header_t*)&buf[pos];
+            }
+        }
+        void printRtpInfo(char *buf, int n, int p) {
             short rtp_size = ntohs(*(short *) &buf[2]);
 
             rtp_header_t *rtpHeader = (rtp_header_t *) (buf + RSTP_INTERLEAVE_SIZE);
 
-            printf("%d  positon: %8d seq %5d,PT %d,Size %d,recv size %d\n", p,position, ntohs(rtpHeader->seq_no), rtpHeader->payload_type,
-                   rtp_size,n);
-            if (rtpHeader->payload_type!=98) {
+            printf("%d  positon: %8d seq %5d,PT %d,Size %d,recv size %d\n", p, position, ntohs(rtpHeader->seq_no),
+                   rtpHeader->payload_type,
+                   rtp_size, n);
+            if (rtpHeader->payload_type != 98) {
                 return;
             }
         }
 
     private:
         long position;
-        char position_buf[4];
+        char prepend_buf[MAGIC_SIZE+1];
         int prepend;
     };
 
@@ -532,51 +541,49 @@ public:
     Inceptor() : m_previous_status(false) {
         m_source = new RTSPSource(FILENAME);
         m_fragments = new Fragments(m_source);
+        m_record_file= fopen("record.data","wb");
     }
 
     ~Inceptor() {
         delete m_source;
+        fclose(m_record_file);
     }
 
-    bool isRtpPacket(char *buf, int n) {
-        if (n < 6)
-            return false;
-        rtp_header_t *rtp_header = (rtp_header_t *) &buf[4];
-
-//        bool ret= ('$' == buf[0])&&(0==buf[1])&&(rtp_header->version==2)&&(rtp_header->padding==0)&&(rtp_header->extension==0)&&(rtp_header->csrc_len==0)&&(rtp_header->payload_type==H264);
-        bool ret = '$' == buf[0];
-        if (ret) {
-            short *s = (short *) &buf[2];
-
-            short rtp_size = ntohs(*s);
-//            printf("rtp_size %d\n",rtp_size);
-        }
-        return ret;
-    }
 
     //截获buf,大小n
     //fd是要发生数据的一端
     bool handle(int fd, char *buf, int n) {
-        int result=m_rtp_reader.read(buf, n);
-
+        std::vector<int> rtp_positions;
+        int result = m_rtp_reader.read(buf, n,rtp_positions);
+        //m_record_file
+//        fwrite(buf,1,n,m_record_file);
         if (g_inception) {
-            if (m_previous_status == false && (isRtpPacket(buf, n) && canIncept(&buf[4 + RTP_HEADER_SIZE]))) {
+            rtp_header_t *rtp = NULL;
+            char *nalu =NULL;
+            for (auto pos:rtp_positions) {//取出第一个rtp数据包
+                rtp = (rtp_header_t *) &buf[pos];
+                nalu = &buf[pos + RTP_HEADER_SIZE];
+                break;
+            }
+
+            if (rtp_positions.size()>0&&m_previous_status == false && ( canIncept(nalu)  )) {
                 m_previous_status = true;
-                m_rtp_header = *((rtp_header_t *) &buf[4]);
+                m_rtp_header = *rtp;
                 //大端序->小端序
-                m_rtp_header.seq_no = ntohs(m_rtp_header.seq_no);
+                m_rtp_header.seq_no = ntohs(m_rtp_header.seq_no)-1;
                 m_rtp_header.timestamp = ntohl(m_rtp_header.timestamp);
                 m_rtp_header.ssrc = ntohl(m_rtp_header.ssrc);
                 m_fragments->Reset();
-            } else if (m_previous_status) {
-                m_rtp_header.seq_no++;
-                m_rtp_header.timestamp += 90000 / 30;
             }
             //rtp packet
             if (m_previous_status) {
-                return write_rtp_packet(fd, m_rtp_header);
+                for (auto pos:rtp_positions) {
+                    m_rtp_header.seq_no++;
+                    m_rtp_header.timestamp+=90000/30;
+                    write_rtp_packet(fd, m_rtp_header);
+                }
+                return 1;
             } else {
-                printf("here\n");
                 goto DIRECT_SEND;
             }
         } else {
@@ -655,6 +662,9 @@ private:
     rtp_header_t m_rtp_header;
 
     RTSPReader m_rtp_reader;
+
+
+    FILE* m_record_file;
 };
 
 
@@ -664,7 +674,7 @@ void client_request_handler(int accept_fd) {
     char *in_buf = (char *) malloc(MESSAGE_SIZE);
     //这里是要hook的服务器
 
-    int serverfd = open_connect_fd(RTSP_VIDEO_IP, 554);
+    int serverfd = open_connect_fd(RTSP_VIDEO_IP, RTSP_VIDEO_PORT);
 
 
     if (serverfd == -1) {

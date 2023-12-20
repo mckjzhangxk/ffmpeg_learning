@@ -1,9 +1,10 @@
 # H264码流 分层结构
 - 总体结构是 H264=VCL层 + NAL层
 - VCL的输出码流 叫SODB
-- SODB的 对齐叫做 RBSP
+- <font color=red>SODB的 对齐叫做 RBSP,trailing bits是1 0 0 ...,直到补齐一个字节，如果SODB本身就是对齐的画，也要格外追加一个字节 0b10000000。</font>
+- RBSP码率需要加入防竞争码，输出的码流叫做EBSP( Encapsulated Byte Sequence Payload)
 ![Alt text](imgs/base.png)
-
+![Alt text](imgs/ebsp.png)
 ![Alt text](imgs/struct.png)
 
 上图中

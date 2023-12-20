@@ -45,6 +45,7 @@ add_executable(ffmpeg_log basic/ffmpeg_log.cpp)
 add_executable(ffmpeg_dir basic/ffmpeg_dir.cpp)
 add_executable(mediainfo basic/mediainfo.cpp)
 add_executable(time_base basic/timebase.cpp)
+add_executable(h264_decoder_main basic/h264/NaluSPS.cpp basic/h264/NaluPPS.cpp basic/h264/h264_decoder_main.cpp)
 
 
 #解复用相关操作
