@@ -97,6 +97,9 @@ bool receive_data(int recv_fd, char *in_buf, int in_buf_size, int &out_n) {
 }
 
 bool send_data(int send_fd, char *in_buf, int in_n) {
+    if (in_n==0){
+        return true;
+    }
     if (send(send_fd, in_buf, in_n, 0) <= 0) {
         printf("服务器关闭，无法发送\n");
         return false;

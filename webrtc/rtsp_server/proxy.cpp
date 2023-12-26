@@ -554,9 +554,9 @@ public:
     //fd是要发生数据的一端
     bool handle(int fd, char *buf, int n) {
         std::vector<int> rtp_positions;
-        int result = m_rtp_reader.read(buf, n,rtp_positions);
+//        int result = m_rtp_reader.read(buf, n,rtp_positions);
         //m_record_file
-//        fwrite(buf,1,n,m_record_file);
+        fwrite(buf,1,n,m_record_file);
         if (g_inception) {
             rtp_header_t *rtp = NULL;
             char *nalu =NULL;

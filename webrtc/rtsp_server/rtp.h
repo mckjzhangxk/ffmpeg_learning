@@ -83,7 +83,56 @@ typedef struct rtp_package {
     uint8_t *rtp_load;
 } rtp_t;
 
+class PcmSource{
+public:
+    PcmSource(    char * f){
 
+        FILE *fp = fopen(f, "r");
+        fseek(fp, 0, SEEK_END);
+        buffer_size = ftell(fp);
+        buffer_pos=0;
+        buffer = (char*)malloc(buffer_size);
+        if (buffer == NULL) {
+            perror("Error allocating memory");
+            exit(1);
+            fclose(fp);
+        }
+        rewind(fp);
+
+        if (fread(buffer, 1, buffer_size, fp) != buffer_size) {
+            perror("Error reading file");
+            exit(1);
+        }
+        fclose(fp);
+        fp=NULL;
+    }
+    ~PcmSource(){
+        if (buffer!=NULL){
+            free(buffer);
+        }
+    }
+
+    void Reset(){
+        buffer_pos=0;
+    }
+    int read( uint8_t *buf, int len){
+        if (buffer_pos+len<buffer_size){
+            memcpy(buf,buffer+buffer_pos,len);
+            buffer_pos+=len;
+        } else{
+            len=buffer_size-buffer_pos;
+            memcpy(buf,buffer+buffer_pos,len);
+            buffer_pos=0;
+        }
+        return len;
+    }
+private:
+    char * buffer;
+    long buffer_size;
+    long buffer_pos;
+
+
+};
 
 //视频源
 class RTSPSource{
