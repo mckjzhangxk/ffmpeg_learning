@@ -24,23 +24,30 @@
 
 #define MAGIC_SIZE  ((RSTP_INTERLEAVE_SIZE+RTP_HEADER_SIZE+3-1))
 
-enum FRAME_TYPE{
+enum FRAME_TYPE {
     VIDEO,
     VIDEO_IDR,
     AUDIO,
-    OTHER,
+    NOT_INTEREST,
     TRUCK_HEADER,
-    NOT_INTEREST
+    UNKNOWN,
+    PACKETED
 };
 
-struct FrameInfo{
+struct FrameInfo {
     FRAME_TYPE type;
-    int start;
-    int end;
-    int header_start;
+    int length2;
+    int length6;
+    int length9;
+    int payload_length;
+
+    int packet_size;
+    int packet_index;
+    int key_frame_idx;
     int header_end;
 
 };
+
 extern bool receive_data(int recv_fd, char *in_buf, int in_buf_size, int &out_n);
 
 extern bool send_data(int send_fd, char *in_buf, int in_n);
@@ -114,7 +121,7 @@ public:
         return 0;
     }
 
-    int peek(char **out_buf, int *out_len){
+    int peek(char **out_buf, int *out_len) {
         *out_len = m_pos;
         if (*out_len) {
             *out_buf = (char *) malloc(sizeof(char) * (*out_len));
@@ -124,6 +131,7 @@ public:
         }
         return 0;
     }
+
 private:
     char *m_buf;
     int m_buf_size;
@@ -132,13 +140,15 @@ private:
 
 class TVT_Frame {
 public:
-    TVT_Frame() : m_start_code_len(0),m_find_first_start_code(false),m_skip_bytes(0) {
-        pcmSource=new PcmSource(FILENAME);
+    TVT_Frame() : m_start_code_len(0), m_skip_bytes(0) {
+        pcmSource = new PcmSource(FILENAME);
+        srand(time(NULL));
     }
+
     /*
      * 本函数用于分析传入的start 的包组成结构，并且把结果经过处理转发出去
      * */
-    int write(int fd,char *start, int len) {
+    int write(int fd, char *start, int len) {
         char *end = len + start;
 
         //p保存用于检索 startcode的位置
@@ -151,12 +161,10 @@ public:
         char *q = p;
 
 
-
         while (p) {
             p = findStartCodePos(p, end - p);
 
             if (p) {//确定这是起始码
-                m_find_first_start_code= true;
                 int result = m_reader.append(q, p - q);
                 if (result < 0) {
                     return -1;
@@ -165,25 +173,121 @@ public:
                 int out_len;
                 m_reader.shift(&out_buf, &out_len);//取出之前压入的内容，这个假设这些内容都是属于一个之前的包
 
-                if(p==q){//这个只可能在p=start的情况下触发，表示start开头是一个完整startcode 或不完整startcode的后半段
-                    int i=0;
-                    while (i<len&&p[i]==0x31){
+                if (p == q) {//这个只可能在p=start的情况下触发，表示start开头是一个完整startcode 或不完整startcode的后半段
+                    int i = 0;
+                    while (i < len && p[i] == 0x31) {
                         i++;
                     }//i是p 指向线序31的个数
-                    int reamin=4-i;//表示有多个个31 被错误的当做之前的包
-                    out_len-=reamin;//所以要修正之前的包大小
-                    m_reader.append(out_buf+out_len,reamin);//回退属于本次包的0x31
+                    int reamin = 4 - i;//表示有多个个31 被错误的当做之前的包
+                    out_len -= reamin;//所以要修正之前的包大小
+                    m_reader.append(out_buf + out_len, reamin);//回退属于本次包的0x31
                 }
                 FrameInfo frameInfo;
-                int r=parse_frame((unsigned char*)out_buf, out_len,&frameInfo);
+                int r = parse_frame((unsigned char *) out_buf, out_len, &frameInfo);
 
-                if (r==0&&frameInfo.type==AUDIO){
-                    int offset=21*4;
-                    pcmSource->read((unsigned char*)(out_buf+offset),out_len-offset);
+                if (r == 0 && frameInfo.type == AUDIO) {
+                    int offset = 21 * 4;
+                    pcmSource->read((unsigned char *) (out_buf + offset), out_len - offset);
+
                 }
+                ////////////////////////普通视频///////////////////////
+//                if (r == 0 && (frameInfo.type == VIDEO)) {
+//                    int l = out_len - 21 * 4;
+//                    printf("length2 %d,length6 %d,length9 %d, len %d\n", frameInfo.length2 - l, frameInfo.length6 - l,
+//                           frameInfo.length9 - l, l);
+//
+//                    out_buf[11*4 +0]=0x48;
+//                    out_buf[11*4 + 1]=rand() % 256;
+//                    out_buf[11*4 + 2]=rand() % 256;
+//                    out_buf[11*4 +3]=0xb3;
+//
+//                    out_buf[13*4 +0]=rand() % 256;
+//                    out_buf[13*4 +0]=rand() % 256;
+//                    out_buf[13*4 + 1]=rand() % 256;
+//                    out_buf[13*4 + 2]=rand() % 256;
+//                    out_buf[13*4 +3]=rand() % 256;
+//
+//                    for (int k = 0; k < 4; ++k) {
+//                        printf("%02x ", (unsigned char) out_buf[13*4 + k]);
+//                    }
+//                }
+                ////////////////////////IDR视频///////////////////////
+                int keyFrameOffset=2000;
+                if (r == 0 && (frameInfo.type == VIDEO_IDR)) {
+                    out_len-=keyFrameOffset;
+                    frameInfo.length2-=keyFrameOffset;
+                    frameInfo.length6-=keyFrameOffset;
+                    frameInfo.length9-=keyFrameOffset;
+
+                    *((int *) &out_buf[4 * 5])=frameInfo.length2;
+                    *((int *) &out_buf[4 * 12])=frameInfo.length6;
+                    *((int *) &out_buf[4 * 15])=frameInfo.length9;
+
+                    int l = out_len - 28 * 4+keyFrameOffset;
+                    frameInfo.payload_length = l;
+                    m_packet_frame.emplace_back(frameInfo);
+                    memset(out_buf+28*8,0,l);
+                }
+                else if (r == 0 && (frameInfo.type == PACKETED)) {
+                    out_len-=keyFrameOffset;
+                    frameInfo.length2-=keyFrameOffset;
+                    *((int *) &out_buf[4 * 5])=frameInfo.length2;
+
+
+                    int l = out_len - 9 * 4+keyFrameOffset;
+                    memset(out_buf+9*8,7,l);
+                    frameInfo.payload_length = l;
+                    m_packet_frame.emplace_back(frameInfo);
+
+
+                    if (frameInfo.packet_index == frameInfo.packet_size) {
+                        int total_paylload = 0;
+                        for (auto &f: m_packet_frame) {
+                            total_paylload += f.payload_length;
+                        }
+                        total_paylload-=keyFrameOffset;
+                        //打印所有的关键帧
+                        for (int i = 0; i < m_packet_frame.size(); ++i) {
+                            auto &f = m_packet_frame[i];
+                            if (i == 0) {
+                                printf("[%d][%d/%d] length2:%d,length6:%d,length9:%d,total %d\n", f.key_frame_idx,
+                                       f.packet_index, f.packet_size,
+                                       f.length2 - total_paylload, f.length6 - total_paylload,
+                                       f.length9 - total_paylload,total_paylload);
+                            } else {
+                                printf("[%d][%d/%d] length2:%d\n", f.key_frame_idx, f.packet_index, f.packet_size,
+                                       f.length2 - total_paylload);
+                            }
+
+                        }
+
+                        m_packet_frame.clear();
+//                        out_buf[4 * 1+0]=0x1c;
+//                        out_buf[4 * 1+1]=0x21;
+//                        out_buf[4 * 1+2]=1;
+
+                        if (previous_magic_cnt++%5==0){
+                            previous_magic=*((short *) &out_buf[4 * 1]);
+                        }
+
+                        *((short *) &out_buf[4 * 1])=previous_magic;
+
+
+
+//                        int a=*((int *) &out_buf[4 * 1]);
+
+//                        out_buf[4 ] =  rand() % 256;;
+//                        out_buf[5 ] =  rand() % 256;//out_buf[5 ]+1;
+                        for (int k = 0; k < 4; ++k) {
+                            printf("%02x ",(unsigned char )out_buf[4 +k]);
+                        }
+                        printf("\n");
+                    }
+                }
+
                 //把缓冲区取出的内容发送出去，由于之前已经发送了m_skip_bytes个字节，为了避免重复发送，我们跳过这些字节
-                send_data(fd, out_buf+m_skip_bytes, out_len-m_skip_bytes);
-                m_skip_bytes=0;
+                send_data(fd, out_buf + m_skip_bytes, out_len - m_skip_bytes);
+                m_skip_bytes = 0;
 
 
                 q = p;//步进扫描
@@ -196,14 +300,11 @@ public:
                     }
                     break;
                 }
-            } else if(m_find_first_start_code){
+            } else {
                 int result = m_reader.append(q, end - q);
                 if (result < 0) {
                     return -1;
                 }
-                break;
-            }else{
-                send_data(fd, start, len);
             }
         }
 
@@ -212,23 +313,37 @@ public:
         //方法是执行到这里,输入的start的字节要不全部发生出去，没发出去的都暂存在m_reader中
         char *out_buf;
         int out_len;
-        m_reader.peek(&out_buf,&out_len);
+        m_reader.peek(&out_buf, &out_len);
+        //如果这个包的结尾是startcode，我认为留在m_reader下一次发生会更好
+        out_len -= m_start_code_len;
 
         FrameInfo frameInfo;
         //都m_reader中的字节进行分析，如果是音频则延迟等待发送，否则发送
-        int r=parse_frame((unsigned char*)out_buf, out_len,&frameInfo);
-        if(r==0){
-            if (frameInfo.type==AUDIO){
-                //音频包延迟，这样好处理一些
-            }else{
-                //同意跳过已经发生的字节,再送out_len-m_skip_bytes个字节
-                send_data(fd, out_buf+m_skip_bytes, out_len-m_skip_bytes);
-                //更新已经发生驻留在m_reader中字节的数量
-                m_skip_bytes=out_len;
-            }
+        int r = parse_frame((unsigned char *) out_buf, out_len, &frameInfo);
+
+        switch (r) {
+            case 0:
+                //非 音视频包和那些被截断的直接发生
+                if (frameInfo.type != TRUCK_HEADER
+                    && frameInfo.type != AUDIO
+                    && frameInfo.type != VIDEO
+                    && frameInfo.type != VIDEO_IDR
+                    && frameInfo.type != PACKETED
+                        ) {
+                    goto send;
+                }
+
+                break;
+            case -1://不是一定packet，立即发出去
+                goto send;
         }
+        return 0;
 
-
+        send:
+        //跳过已经发送的字节,再送out_len-m_skip_bytes个字节
+        send_data(fd, out_buf + m_skip_bytes, out_len - m_skip_bytes);
+        //更新已经发生驻留在m_reader中字节的数量
+        m_skip_bytes = out_len;
         return 0;
     }
 
@@ -249,7 +364,7 @@ private:
         for (int i = 0; i < len; ++i) {
             if (data[i] == 0x31) {
                 m_start_code_len++;
-            } else{//m_start_code_len是连续31的个数,如果
+            } else {//m_start_code_len是连续31的个数,如果
                 m_start_code_len = 0;
             }
 
@@ -273,72 +388,109 @@ private:
 
     //输出：
     //result：解析的结果
+    // 其中type 分为以下几个类别
+    //    TRUCK_HEADER：表示给出的buf太小，无法确定是不是一个packet
+    //    UNKNOWN：buf的长度不足21个word,有可能是我未知的包，也有可能是一个其他类型的包，被截断了，导致的误判
+    //    VIDEO:普通视频,头部21个word
+    //    AUDIO:普通音频,头部21个word
+    //    VIDEO_IDR
+    //    NOT_INTEREST:头部>=21个字节，但非以上的VIDEO,AUDIO,VIDEO_IDR
 
     //返回值：
     //0:成功
     //-1:这不是一个packet
 
-    int parse_frame(unsigned char *buf, int n,FrameInfo* result) {
-        for (int i = 0; i < 4&&i<n; ++i) {
+    int parse_frame(unsigned char *buf, int n, FrameInfo *result) {
+        result->type = UNKNOWN;
+        for (int i = 0; i < 4 && i < n; ++i) {
             if (buf[i] != 0x31) {
                 return -1;
             }
         }
+
         if (n < 4) {//数据太小，
-            result->type=TRUCK_HEADER;
             return 0;
         }
-
-        if (n<4*21){
-            result->type=NOT_INTEREST;
+        if (n < 4 * 9) {
             return 0;
-        }
-
-        bool isNormalFrame= true;
-        for (int i = 12; i < 16; ++i) {//查找 ff ff ff ff
-            if (buf[i] != 0xff) {
-                isNormalFrame= false;
-                break;
+        } else if (n < 4 * 21) {
+            //可能是Packet
+            if (strncmp((char *) buf + 8, "PACK", 4) == 0) {
+                result->key_frame_idx = *((int *) &buf[4 * 3]);
+                result->packet_size = *((int *) &buf[4 * 4]);
+                result->length2 = *((int *) &buf[4 * 5]);
+                result->packet_index = *((int *) &buf[4 * 6]);
+                result->type = PACKETED;
             }
-        }
-        bool isIdrFrame= false;
+            return 0;
 
-        if (!isNormalFrame){
-            isIdrFrame= true;
-            for (int i = 40; i < 44; ++i) {
-                if (buf[i] != 0xff) {//ff ff ff ff
-                    isIdrFrame= false;
+        } else {
+            //以下代码确定是不是普通的video/audio
+            bool isNormalFrame = true;
+            for (int i = 12; i < 16; ++i) {//查找 ff ff ff ff
+                if (buf[i] != 0xff) {
+                    isNormalFrame = false;
                     break;
                 }
             }
-        }
-
-        if (isNormalFrame){
-            if (buf[28]==2){
-                result->type=AUDIO;
-            } else if(buf[28]==1){
-                result->type=VIDEO;
-            } else{
-                result->type=OTHER;
+            //以下代码确定是不是Packeted
+            if (strncmp((char *) buf + 8, "PACK", 4) == 0) {
+                result->key_frame_idx = *((int *) &buf[4 * 3]);
+                result->packet_size = *((int *) &buf[4 * 4]);
+                result->length2 = *((int *) &buf[4 * 5]);
+                result->packet_index = *((int *) &buf[4 * 6]);
+                result->type = PACKETED;
             }
-        } else if(isIdrFrame){
-            result->type=VIDEO_IDR;
-        } else{
-            result->type=OTHER;
+
+            if (isNormalFrame) {
+                result->length2 = *((int *) &buf[4 * 1]);
+                result->length6 = *((int *) &buf[4 * 5]);
+
+                *((int *) &buf[4 * 8]) = n - 21 * 4;
+                result->length9 = *((int *) &buf[4 * 8]);
+                if (buf[28] == 2) {
+                    result->type = AUDIO;
+                } else if (buf[28] == 1) {
+                    result->type = VIDEO;
+                } else {
+                    result->type = NOT_INTEREST;
+                }
+            } else if (result->type == PACKETED) {//进一步确定是不是idr
+                bool isIdrFrame = true;
+                for (int i = 40; i < 44; ++i) {
+                    if (buf[i] != 0xff) {//ff ff ff ff
+                        isIdrFrame = false;
+                        break;
+                    }
+                }
+
+                if (isIdrFrame) {//把idr需要的字段填上
+                    result->type = VIDEO_IDR;
+                    result->length6 = *((int *) &buf[4 * 12]);
+                    result->length9 = *((int *) &buf[4 * 15]);
+                }
+
+            } else {
+                result->type = NOT_INTEREST;
+            }
+
         }
 
-//        printf("--------------------\n");
 
         return 0;
     }
 
     ReadBuffer m_reader;
 
-    int m_start_code_len;
+    ReadBuffer m_keyframe_buffer;
 
+    int m_start_code_len;
     int m_skip_bytes;
-    bool  m_find_first_start_code;
-    PcmSource* pcmSource;
+
+    std::vector<FrameInfo> m_packet_frame;
+    PcmSource *pcmSource;
+    unsigned short previous_magic=0;
+    unsigned  short previous_magic_cnt=0;
 };
 
 class IO_Set {
@@ -402,7 +554,7 @@ class Inceptor {
 public:
     Inceptor() {
         m_record_file = fopen("record.data", "wb");
-        pcmSource=new PcmSource(FILENAME);
+        pcmSource = new PcmSource(FILENAME);
     }
 
     ~Inceptor() {
@@ -417,7 +569,7 @@ public:
     bool handle(int fd, char *buf, int n) {
 
 //        fwrite(buf, 1, n, m_record_file);
-        int r = frame_reader.write(fd,buf, n);
+        int r = frame_reader.write(fd, buf, n);
         if (r < 0) {
             fprintf(stderr, "frame_reader.write error\n");
             exit(1);
@@ -434,7 +586,7 @@ private:
 
     TVT_Frame frame_reader;
 
-    PcmSource* pcmSource;
+    PcmSource *pcmSource;
     FILE *m_record_file;
 };
 
