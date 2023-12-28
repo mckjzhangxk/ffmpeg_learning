@@ -139,163 +139,215 @@ private:
     int m_buf_size;
     int m_pos;
 };
-class ReplaceReader{
+
+class ReplaceReader {
 public:
     int idc_frameIndex;
-    uint8_t * idc_frame;
+    uint8_t *idc_frame;
     int idc_frame_size;
     int idc_frame_pos;
-
-    ReplaceReader():KeyFrameIndex(1){
+    int idc_remain_byte_cnt;
+    ReplaceReader() : KeyFrameIndex(1) {
         m_source = new RTSPSource(VIDEO_FILENAME);
-        idc_frameIndex=-1;
+        idc_frameIndex = -1;
 
-        idc_frame_pos=0;
-        idc_frame=NULL;
-        idc_frame_size=0;
+        idc_frame_pos = 0;
+        idc_frame = NULL;
+        idc_frame_size = 0;
+        idc_remain_byte_cnt=0;
     }
-    ~ReplaceReader(){
+
+    ~ReplaceReader() {
         free(m_source);
     }
-    int nextPacket(FrameInfo f,char *out_buf, int out_len){
-        if (f.type==PACKETED){
-            if (f.key_frame_idx==idc_frameIndex){
-                int offset=9*4;
-                char *p=out_buf+offset;
 
-                int copy_num=out_len-offset;//需要多少个字节
-                int remain_bytes=idc_frame_size-idc_frame_pos;//剩余多少个字节
+    int nextPacket(FrameInfo f, char **out_buf, int *out_len) {
+        if (f.type == PACKETED) {
+            if (f.key_frame_idx == idc_frameIndex) {
+                char reserverd_bytes[idc_remain_byte_cnt];
+                if (idc_remain_byte_cnt&&f.packet_index==f.packet_size)
+                    memcpy(reserverd_bytes,out_buf[0]+out_len[0]-idc_remain_byte_cnt,idc_remain_byte_cnt);
 
-                if (copy_num<=remain_bytes){
-                    memcpy(p,idc_frame_pos+idc_frame,copy_num);
-                    idc_frame_pos+=copy_num;
+
+                int offset = 9 * 4;
+                char *p = out_buf[0] + offset;
+
+                int copy_num = -1;
+
+                if (f.packet_index==f.packet_size){
+                    copy_num=idc_frame_size - idc_frame_pos;
+                    if (out_len[0]-offset<copy_num+idc_remain_byte_cnt){
+                        out_buf[0]=(char*)realloc(out_buf[0],offset+copy_num+idc_remain_byte_cnt);
+                        p = out_buf[0] + offset;
+                    }
                 } else{
-                    if (remain_bytes>0)
-                        memcpy(p,idc_frame_pos+idc_frame,remain_bytes);
-                    memset(p+remain_bytes,0, copy_num-remain_bytes);
-                    idc_frame_pos+=remain_bytes;
+                    copy_num = idc_frame_size/f.packet_size;//需要多少个字节
+                    if (out_len[0]-offset<copy_num){
+                        out_buf[0]=(char*)realloc(out_buf[0],offset+copy_num);
+                        p = out_buf[0] + offset;
+                    }
+                }
+
+                memcpy(p, idc_frame_pos + idc_frame, copy_num);
+                *((int *) &out_buf[0][4 * 5]) = idc_frame_size + 76+idc_remain_byte_cnt;
+
+                out_len[0]=copy_num+offset;
+
+                idc_frame_pos += copy_num;
+
+                if (f.packet_index==f.packet_size){
+                    out_buf[0][7*4]=out_buf[0][5*4];
+                    out_buf[0][7*4+1]=out_buf[0][5*4+1];
+                    out_len[0]+=idc_remain_byte_cnt;
+                    if (idc_remain_byte_cnt)
+                        memcpy(p+copy_num, reserverd_bytes, idc_remain_byte_cnt);
                 }
                 return 0;
-            } else{
+            } else {
                 return -2;//不应该走到这里
             }
 
         }
 
-        uint8_t* nalu_buf= (uint8_t*)calloc(1,NAL_BUF_SIZE);
-        uint8_t* nalu_output= (uint8_t*)calloc(1,NAL_BUF_SIZE+29*4);
+        uint8_t *nalu_buf = (uint8_t *) calloc(1, NAL_BUF_SIZE);
+        uint8_t *nalu_output = (uint8_t *) calloc(1, NAL_BUF_SIZE + 29 * 4);
         int nalu_len;
-        int stop_type=0;
+        int stop_type = 0;
         switch (f.type) {
             case VIDEO:
-                stop_type=1;
+                stop_type = 1;
                 break;
             case VIDEO_IDR:
-                stop_type=5;
+                stop_type = 5;
                 break;
         }
-        int pos=0;
+        int pos = 0;
         while (true) {
 
             int ret = m_source->copy_nal_from_file(nalu_buf, &nalu_len);
 
-            bool exitLoop= false;
-            if (ret > 0){
-                int type=nalu_buf[0]&0x1f;
+            bool exitLoop = false;
+            if (ret > 0) {
+                int type = nalu_buf[0] & 0x1f;
                 switch (type) {
                     case 7://sps
                     case 8://pps
-                        if (stop_type==5){
-                            nalu_output[pos++]=0;
-                            nalu_output[pos++]=0;
-                            nalu_output[pos++]=0;
-                            nalu_output[pos++]=1;
-                            memcpy(nalu_output+pos,nalu_buf,nalu_len);
-                            pos+=nalu_len;
+                        if (stop_type == 5) {
+                            nalu_output[pos++] = 0;
+                            nalu_output[pos++] = 0;
+                            nalu_output[pos++] = 0;
+                            nalu_output[pos++] = 1;
+                            memcpy(nalu_output + pos, nalu_buf, nalu_len);
+                            pos += nalu_len;
                             continue;
-                        } else{
+                        } else {
                             //如果要求P帧，但是源中没有多余的，我把剩余的默认设置成0
-                            nalu_output[3]=1;
-                            nalu_len=NAL_BUF_SIZE;
-                            exitLoop= true;
+                            nalu_output[3] = 1;
+                            nalu_len = NAL_BUF_SIZE;
+                            exitLoop = true;
                             break;
                         }
                     case 5:
-                        nalu_output[pos++]=0;
-                        nalu_output[pos++]=0;
-                        nalu_output[pos++]=0;
-                        nalu_output[pos++]=1;
-                        memcpy(nalu_output+pos,nalu_buf,nalu_len);
-                        exitLoop= true;
+                        nalu_output[pos++] = 0;
+                        nalu_output[pos++] = 0;
+                        nalu_output[pos++] = 0;
+                        nalu_output[pos++] = 1;
+                        memcpy(nalu_output + pos, nalu_buf, nalu_len);
+                        exitLoop = true;
                         break;
                     case 1:
-                        if (stop_type==5){//跳过这里的P帧，去找下一个I帧
-                            pos=0;
+                        if (stop_type == 5) {//跳过这里的P帧，去找下一个I帧
+                            pos = 0;
                             continue;
                         }
-                        nalu_output[pos++]=0;
-                        nalu_output[pos++]=0;
-                        nalu_output[pos++]=0;
-                        nalu_output[pos++]=1;
-                        memcpy(nalu_output+pos,nalu_buf,nalu_len);
-                        pos+=nalu_len;
+                        nalu_output[pos++] = 0;
+                        nalu_output[pos++] = 0;
+                        nalu_output[pos++] = 0;
+                        nalu_output[pos++] = 1;
+                        memcpy(nalu_output + pos, nalu_buf, nalu_len);
+                        pos += nalu_len;
 
-                        exitLoop= true;
+                        exitLoop = true;
                         break;
                     default:
                         continue;
                 }
-            }else if(ret==0){
+            } else if (ret == 0) {
                 continue;
-            }else{
+            } else {
                 m_source->Reset();
             }
-            if (exitLoop){
+            if (exitLoop) {
                 break;
             }
         }
 
 
-        if (stop_type==1){
-            int offset=21*4;
-            char *p=out_buf+offset;
+        if (stop_type == 1) {
+            int offset = 21 * 4;
+            char *p = out_buf[0] + offset;
 
-            int copy_num=out_len-offset;//需要多少个字节
-            int remain_bytes=nalu_len+4;//剩余多少个字节
-            if (copy_num<=remain_bytes){
-                memcpy(p,nalu_output,copy_num);
-            }else{
-                memcpy(p,nalu_output,remain_bytes);
-                memset(p+remain_bytes,0, copy_num-remain_bytes);
+            int reversed_bytes_cnt=f.length2-76-f.length9;
+            char reserverd_bytes[reversed_bytes_cnt];
+
+            if (reversed_bytes_cnt)
+                memcpy(reserverd_bytes,out_buf[0]+out_len[0]-reversed_bytes_cnt,reversed_bytes_cnt);
+
+            int payload_size = nalu_len + 4;//需要多少个字节
+            if (out_len[0]-offset<payload_size+reversed_bytes_cnt){
+                out_buf[0]=(char*)realloc(out_buf[0],offset+payload_size+reversed_bytes_cnt);
+                p = out_buf[0] + offset;
             }
 
+            memcpy(p, nalu_output, payload_size);
+
+            *((int *) &out_buf[0][4 * 1]) = payload_size + 76+reversed_bytes_cnt;
+            *((int *) &out_buf[0][4 * 5]) = payload_size + 60+reversed_bytes_cnt;
+            *((int *) &out_buf[0][4 * 8]) = payload_size;
+            out_len[0] = offset + payload_size+reversed_bytes_cnt;
+            if (reversed_bytes_cnt)
+                memcpy(p+payload_size, reserverd_bytes, reversed_bytes_cnt);
             free(nalu_output);
-        } else if(stop_type=5){
-
-            int offset=28*4;
-            char *p=out_buf+offset;
-
-
-            int copy_num=out_len-offset;//需要多少个字节
-            int remain_bytes=4+nalu_len;//剩余多少个字节
-
-            if (copy_num<=remain_bytes){
-                memcpy(p,nalu_output,copy_num);
-                idc_frame_pos=copy_num;
-            } else{
-                memcpy(p,nalu_output,remain_bytes);
-                memset(p+remain_bytes,0, copy_num-remain_bytes);
-                idc_frame_pos=remain_bytes;
-            }
-
-            if (idc_frame){
+        } else if (stop_type = 5) {
+            if (idc_frame) {
                 free(idc_frame);
-                idc_frame=NULL;
-                idc_frame_size=0;
+                idc_frame = NULL;
+                idc_frame_size = 0;
+                idc_frameIndex=0;
+                idc_frame_pos=0;
+                idc_remain_byte_cnt=0;
             }
-            idc_frameIndex=f.key_frame_idx;
-            idc_frame=nalu_output;
-            idc_frame_size=nalu_len;
+            int reversed_bytes_cnt=f.length2-76-f.length9;
+            int offset = 28 * 4;
+            char *p = out_buf[0] + offset;
+
+
+            int payload_size = 4 + nalu_len;//剩余多少个字节
+            int copy_num=payload_size/f.packet_size;
+
+            if (out_len[0]-offset<copy_num){
+                out_buf[0]=(char*)realloc(out_buf[0],offset+copy_num);
+                p = out_buf[0] + offset;
+            }
+
+            memcpy(p, nalu_output, copy_num);
+            *((int *) &out_buf[0][4 * 5]) = payload_size + 76+reversed_bytes_cnt;
+            *((int *) &out_buf[0][4 * 12]) = payload_size + 60+reversed_bytes_cnt;
+            *((int *) &out_buf[0][4 * 15]) = payload_size;
+
+            idc_frame_pos = copy_num;
+            idc_frameIndex = f.key_frame_idx;
+            idc_frame = nalu_output;
+            idc_frame_size = payload_size;
+            idc_remain_byte_cnt=reversed_bytes_cnt;
+            out_len[0] = offset + copy_num;
+
+            long l1=*((long *)&out_buf[0][offset-16]);
+
+            long l=*((long *)&out_buf[0][offset-8]);
+            printf("%ld   %ld    %d\n",l1,l,payload_size);
+
+
         }
 
         free(nalu_buf);
@@ -303,136 +355,135 @@ public:
         return 0;
     }
 
-    int nextPacket(unsigned char *t_video,unsigned char *t_idr,unsigned char *t_pack,unsigned char *t_pack_end,
-                   char **out_buf, int *out_len){
-        if (t_pack==NULL||t_pack_end==NULL||t_idr==NULL){
+    int nextPacket(unsigned char *t_video, unsigned char *t_idr, unsigned char *t_pack, unsigned char *t_pack_end,
+                   char **out_buf, int *out_len) {
+        if (t_pack == NULL || t_pack_end == NULL || t_idr == NULL) {
             return -1;
         }
 //        uint8_t nalu_buf[NAL_BUF_SIZE];
 //        uint8_t nalu_output[NAL_BUF_SIZE+29*4];
 //
-        uint8_t* nalu_buf= (uint8_t*)malloc(NAL_BUF_SIZE);
-        uint8_t* nalu_output= (uint8_t*)malloc(NAL_BUF_SIZE+29*4);
+        uint8_t *nalu_buf = (uint8_t *) malloc(NAL_BUF_SIZE);
+        uint8_t *nalu_output = (uint8_t *) malloc(NAL_BUF_SIZE + 29 * 4);
 
 
-        int pos=0;
-        bool isIdr= false;
+        int pos = 0;
+        bool isIdr = false;
         while (true) {
             int nalu_len;
             int ret = m_source->copy_nal_from_file(nalu_buf, &nalu_len);
 
-            bool exitLoop= false;
-            if (ret > 0){
-                int type=nalu_buf[0]&0x1f;
+            bool exitLoop = false;
+            if (ret > 0) {
+                int type = nalu_buf[0] & 0x1f;
                 switch (type) {
                     case 7://sps
                     case 8://pps
-                        nalu_output[pos++]=0;
-                        nalu_output[pos++]=0;
-                        nalu_output[pos++]=0;
-                        nalu_output[pos++]=1;
-                        memcpy(nalu_output+pos,nalu_buf,nalu_len);
-                        pos+=nalu_len;
+                        nalu_output[pos++] = 0;
+                        nalu_output[pos++] = 0;
+                        nalu_output[pos++] = 0;
+                        nalu_output[pos++] = 1;
+                        memcpy(nalu_output + pos, nalu_buf, nalu_len);
+                        pos += nalu_len;
                         continue;
                     case 5:
-                        isIdr= true;
+                        isIdr = true;
                     case 1:
-                        nalu_output[pos++]=0;
-                        nalu_output[pos++]=0;
-                        nalu_output[pos++]=0;
-                        nalu_output[pos++]=1;
-                        memcpy(nalu_output+pos,nalu_buf,nalu_len);
-                        pos+=nalu_len;
-                        exitLoop= true;
+                        nalu_output[pos++] = 0;
+                        nalu_output[pos++] = 0;
+                        nalu_output[pos++] = 0;
+                        nalu_output[pos++] = 1;
+                        memcpy(nalu_output + pos, nalu_buf, nalu_len);
+                        pos += nalu_len;
+                        exitLoop = true;
                         break;
                     default:
                         continue;
                 }
-            }else if(ret==0){
+            } else if (ret == 0) {
                 continue;
-            }else{
+            } else {
                 m_source->Reset();
-                KeyFrameIndex=1;
+                KeyFrameIndex = 1;
             }
-            if (exitLoop){
+            if (exitLoop) {
                 break;
             }
         }
 
-        if (isIdr){
-            int payload_size=pos;
-            int avg_size=payload_size/4;
+        if (isIdr) {
+            int payload_size = pos;
+            int avg_size = payload_size / 4;
 
 
-            int first_payload_size=avg_size;
-            out_len[0]=28*4+first_payload_size;
-            out_buf[0]= (char*)malloc(sizeof(char )*out_len[0]);
+            int first_payload_size = avg_size;
+            out_len[0] = 28 * 4 + first_payload_size;
+            out_buf[0] = (char *) malloc(sizeof(char) * out_len[0]);
 
-            char *p=out_buf[0];
-            memcpy(p,t_idr,28*4);
+            char *p = out_buf[0];
+            memcpy(p, t_idr, 28 * 4);
 
-            *((int *) &p[4 * 5])=payload_size+76;
-            *((int *) &p[4 * 12])=payload_size+60;
-            *((int *) &p[4 * 15])=payload_size;
+            *((int *) &p[4 * 5]) = payload_size + 76;
+            *((int *) &p[4 * 12]) = payload_size + 60;
+            *((int *) &p[4 * 15]) = payload_size;
 
-            *((int *) &p[4 * 6])=1;//paclod id
-            *((int *) &p[4 * 4])=4;//packsize
-            *((int *) &p[4 * 3])=KeyFrameIndex;//关键帧序号
-            memcpy(p+28*4,nalu_output,first_payload_size);
-
-
-            int second_payload_size= avg_size;
-            out_len[1]=9*4 + second_payload_size;
-            out_buf[1]= (char*)malloc(sizeof(char )*out_len[1]);
-            p=out_buf[1];
-            memcpy(p,t_pack,9*4);
-            *((int *) &p[4 * 5])=payload_size+76;
-            *((int *) &p[4 * 6])=2;//paclod id
-            *((int *) &p[4 * 4])=4;//packsize
-            *((int *) &p[4 * 3])=KeyFrameIndex;
-            memcpy(p+9*4,nalu_output+avg_size, second_payload_size);
-
-            int third_payload_size= avg_size;
-            out_len[2]=9*4 + third_payload_size;
-            out_buf[2]= (char*)malloc(sizeof(char )*out_len[2]);
-            p=out_buf[2];
-            memcpy(p,t_pack,9*4);
-            *((int *) &p[4 * 5])=payload_size+76;
-            *((int *) &p[4 * 6])=2;//paclod id
-            *((int *) &p[4 * 4])=4;//packsize
-            *((int *) &p[4 * 3])=KeyFrameIndex;
-            memcpy(p+9*4,nalu_output+2*avg_size, third_payload_size);
+            *((int *) &p[4 * 6]) = 1;//paclod id
+            *((int *) &p[4 * 4]) = 4;//packsize
+            *((int *) &p[4 * 3]) = KeyFrameIndex;//关键帧序号
+            memcpy(p + 28 * 4, nalu_output, first_payload_size);
 
 
+            int second_payload_size = avg_size;
+            out_len[1] = 9 * 4 + second_payload_size;
+            out_buf[1] = (char *) malloc(sizeof(char) * out_len[1]);
+            p = out_buf[1];
+            memcpy(p, t_pack, 9 * 4);
+            *((int *) &p[4 * 5]) = payload_size + 76;
+            *((int *) &p[4 * 6]) = 2;//paclod id
+            *((int *) &p[4 * 4]) = 4;//packsize
+            *((int *) &p[4 * 3]) = KeyFrameIndex;
+            memcpy(p + 9 * 4, nalu_output + avg_size, second_payload_size);
 
-            int forth_payload_size= payload_size - 3 * avg_size;
-            out_len[3]=9*4 + forth_payload_size;
-            out_buf[3]= (char*)malloc(sizeof(char )*out_len[1]);
-            p=out_buf[3];
-            memcpy(p,t_pack_end,9*4);
-            *((int *) &p[4 * 5])=payload_size+76;
-            *((int *) &p[4 * 6])=4;//paclod id
-            *((int *) &p[4 * 4])=4;//packsize
-            *((int *) &p[4 * 3])=KeyFrameIndex;
-            p[4*7]=p[4*5];
-            p[4*7+1]=p[4*5+1];
-            memcpy(p+9*4,nalu_output+3*avg_size, forth_payload_size);
+            int third_payload_size = avg_size;
+            out_len[2] = 9 * 4 + third_payload_size;
+            out_buf[2] = (char *) malloc(sizeof(char) * out_len[2]);
+            p = out_buf[2];
+            memcpy(p, t_pack, 9 * 4);
+            *((int *) &p[4 * 5]) = payload_size + 76;
+            *((int *) &p[4 * 6]) = 2;//paclod id
+            *((int *) &p[4 * 4]) = 4;//packsize
+            *((int *) &p[4 * 3]) = KeyFrameIndex;
+            memcpy(p + 9 * 4, nalu_output + 2 * avg_size, third_payload_size);
+
+
+            int forth_payload_size = payload_size - 3 * avg_size;
+            out_len[3] = 9 * 4 + forth_payload_size;
+            out_buf[3] = (char *) malloc(sizeof(char) * out_len[1]);
+            p = out_buf[3];
+            memcpy(p, t_pack_end, 9 * 4);
+            *((int *) &p[4 * 5]) = payload_size + 76;
+            *((int *) &p[4 * 6]) = 4;//paclod id
+            *((int *) &p[4 * 4]) = 4;//packsize
+            *((int *) &p[4 * 3]) = KeyFrameIndex;
+            p[4 * 7] = p[4 * 5];
+            p[4 * 7 + 1] = p[4 * 5 + 1];
+            memcpy(p + 9 * 4, nalu_output + 3 * avg_size, forth_payload_size);
 
             KeyFrameIndex++;
-        } else{
-            int payload_size=pos;
-            out_len[0]=21*4+payload_size;
-            out_buf[0]= (char*)malloc(out_len[0]);
-            char *p=out_buf[0];
-            memcpy(p,t_video,21*4);
-             *((int *) &p[4 * 1])=payload_size+76;
-             *((int *) &p[4 * 5])=payload_size+60;
-             *((int *) &p[4 * 8])=payload_size;
-            memcpy(p+21*4,nalu_output,payload_size);
+        } else {
+            int payload_size = pos;
+            out_len[0] = 21 * 4 + payload_size;
+            out_buf[0] = (char *) malloc(out_len[0]);
+            char *p = out_buf[0];
+            memcpy(p, t_video, 21 * 4);
+            *((int *) &p[4 * 1]) = payload_size + 76;
+            *((int *) &p[4 * 5]) = payload_size + 60;
+            *((int *) &p[4 * 8]) = payload_size;
+            memcpy(p + 21 * 4, nalu_output, payload_size);
 
-            out_len[1]=0;
-            out_len[2]=0;
-            out_len[3]=0;
+            out_len[1] = 0;
+            out_len[2] = 0;
+            out_len[3] = 0;
         }
         free(nalu_buf);
         free(nalu_output);
@@ -443,40 +494,42 @@ private:
     RTSPSource *m_source;
     int KeyFrameIndex;
 };
+
 class TVT_Frame {
 public:
     TVT_Frame() : m_start_code_len(0), m_skip_bytes(0) {
         pcmSource = new PcmSource(FILENAME);
         srand(time(NULL));
-        video_temp[0]=0;
-        video_idr_temp[0]=0;
-        video_packet_temp[0]=0;
-        video_packet_end_temp[0]=0;
+        video_temp[0] = 0;
+        video_idr_temp[0] = 0;
+        video_packet_temp[0] = 0;
+        video_packet_end_temp[0] = 0;
     }
 
-    int  swap_frame(FRAME_TYPE type, char **out_buf, int *out_len) {
-        if (type!=VIDEO_IDR&&type!=VIDEO&&type!=PACKETED){
+    int swap_frame(FRAME_TYPE type, char **out_buf, int *out_len) {
+        if (type != VIDEO_IDR && type != VIDEO && type != PACKETED) {
             return -1;
         }
 
-        if (video_temp[0]==0||video_idr_temp[0]==0||video_packet_temp[0]==0||video_packet_end_temp[0]==0){
+        if (video_temp[0] == 0 || video_idr_temp[0] == 0 || video_packet_temp[0] == 0 ||
+            video_packet_end_temp[0] == 0) {
             return -1;
         }
         return m_replace_reader.nextPacket(video_temp,
                                            video_idr_temp,
                                            video_packet_temp,
                                            video_packet_end_temp,
-                                           out_buf,out_len);
+                                           out_buf, out_len);
 
 
     }
-    void idr_print(FrameInfo frameInfo, char *out_buf,int out_len){
+
+    void idr_print(FrameInfo frameInfo, char *out_buf, int out_len) {
         if (frameInfo.type == VIDEO_IDR) {
             int l = out_len - 28 * 4;
             frameInfo.payload_length = l;
             m_packet_frame.emplace_back(frameInfo);
-        }
-        else if ((frameInfo.type == PACKETED)) {
+        } else if ((frameInfo.type == PACKETED)) {
             int l = out_len - 9 * 4;
             frameInfo.payload_length = l;
             m_packet_frame.emplace_back(frameInfo);
@@ -494,7 +547,7 @@ public:
                         printf("[%d][%d/%d] length2:%d,length6:%d,length9:%d,total %d\n", f.key_frame_idx,
                                f.packet_index, f.packet_size,
                                f.length2 - total_paylload, f.length6 - total_paylload,
-                               f.length9 - total_paylload,total_paylload);
+                               f.length9 - total_paylload, total_paylload);
                     } else {
                         printf("[%d][%d/%d] length2:%d\n", f.key_frame_idx, f.packet_index, f.packet_size,
                                f.length2 - total_paylload);
@@ -504,19 +557,20 @@ public:
 
                 m_packet_frame.clear();
                 for (int k = 0; k < 4; ++k) {
-                    printf("%02x ",(unsigned char )out_buf[4 +k]);
+                    printf("%02x ", (unsigned char) out_buf[4 + k]);
                 }
                 printf("\n");
-            } else{
-                memcpy(video_packet_temp,out_buf,sizeof(video_packet_temp));
+            } else {
+                memcpy(video_packet_temp, out_buf, sizeof(video_packet_temp));
             }
         }
     }
+
 /*
      * 本函数用于分析传入的start 的包组成结构，并且把结果经过处理转发出去
      * */
     int write(int fd, char *start, int len) {
-        static FILE *f=NULL;
+        static FILE *f = NULL;
         char *end = len + start;
 
         //p保存用于检索 startcode的位置
@@ -537,7 +591,7 @@ public:
                 if (result < 0) {
                     return -1;
                 }
-                char *out_buf=NULL;
+                char *out_buf = NULL;
                 int out_len;
                 m_reader.shift(&out_buf, &out_len);//取出之前压入的内容，这个假设这些内容都是属于一个之前的包
 
@@ -554,8 +608,8 @@ public:
                 int r = parse_frame((unsigned char *) out_buf, out_len, &frameInfo);
 
                 if (r == 0 && frameInfo.type == AUDIO) {
-                    int offset = 21 * 4;
-                    pcmSource->read((unsigned char *) (out_buf + offset), out_len - offset);
+//                    int offset = 21 * 4;
+//                    pcmSource->read((unsigned char *) (out_buf + offset), out_len - offset);
 
                 }
                 ////////////////////////普通视频///////////////////////
@@ -566,38 +620,56 @@ public:
 //                    for (int k = 0; k < 4; ++k) {
 //                        printf("%02x ", (unsigned char) out_buf[13*4 + k]);
 //                    }
-                    memcpy(video_temp,out_buf,sizeof(video_temp));
+                    memcpy(video_temp, out_buf, sizeof(video_temp));
                 }
                 ////////////////////////IDR视频///////////////////////
 
                 if (r == 0 && (frameInfo.type == VIDEO_IDR)) {
                     int l = out_len - 28 * 4;
                     frameInfo.payload_length = l;
-                    memcpy(video_idr_temp,out_buf,sizeof(video_idr_temp));
-                }
-                else if (r == 0 && (frameInfo.type == PACKETED)) {
+                    memcpy(video_idr_temp, out_buf, sizeof(video_idr_temp));
+                } else if (r == 0 && (frameInfo.type == PACKETED)) {
                     int l = out_len - 9 * 4;
                     frameInfo.payload_length = l;
 
                     if (frameInfo.packet_index == frameInfo.packet_size) {
-                        memcpy(video_packet_end_temp,out_buf,sizeof(video_packet_end_temp));
-                    } else{
-                        memcpy(video_packet_temp,out_buf,sizeof(video_packet_temp));
+                        memcpy(video_packet_end_temp, out_buf, sizeof(video_packet_end_temp));
+                    } else {
+                        memcpy(video_packet_temp, out_buf, sizeof(video_packet_temp));
                     }
                 }
 
-
+//                idr_print(frameInfo,out_buf,out_len);
                 //把缓冲区取出的内容发送出去，由于之前已经发送了m_skip_bytes个字节，为了避免重复发送，我们跳过这些字节
 
 
                 if (frameInfo.type != VIDEO
                     && frameInfo.type != VIDEO_IDR
                     && frameInfo.type != PACKETED
-                    ) {
+                        ) {
                     send_data(fd, out_buf + m_skip_bytes, out_len - m_skip_bytes);
-                } else{
+                } else {
 
-                    int r=m_replace_reader.nextPacket(frameInfo,out_buf,out_len);
+                    int r = m_replace_reader.nextPacket(frameInfo, &out_buf, &out_len);
+//                    FrameInfo f;
+//                    parse_frame((unsigned char *)out_buf,out_len,&f);
+//                    idr_print(f,out_buf,out_len);
+                    int a=0;
+                    if (frameInfo.type==VIDEO_IDR){
+                        a=28;
+                    } else if (frameInfo.type==VIDEO){
+                        a=21;
+                    } else if(frameInfo.type==PACKETED){
+                        a=9;
+                    }
+                    for (int i = 0; i < 4*a; i+=4) {
+                        printf("%02x %02x %02x %02x\n",
+                               (unsigned char )out_buf[i],
+                               (unsigned char )out_buf[i+1],
+                               (unsigned char )out_buf[i+2],
+                               (unsigned char )out_buf[i+3]);
+                    }
+                    printf("---------\n");
 //                    printf("%d\n",r);
 //                    int offset=0;
 //                    switch (frameInfo.type) {
@@ -634,7 +706,7 @@ public:
 //
 //                    }
 
-                    send_data(fd, out_buf , out_len );
+                    send_data(fd, out_buf, out_len);
 
 
 //                    int r=swap_frame(frameInfo.type,new_out_buf,new_out_len);
@@ -867,12 +939,10 @@ private:
     PcmSource *pcmSource;
 
 
-
-
-    unsigned char video_temp[21*4];
-    unsigned char video_idr_temp[28*4];
-    unsigned char video_packet_temp[9*4];
-    unsigned char video_packet_end_temp[9*4];
+    unsigned char video_temp[21 * 4];
+    unsigned char video_idr_temp[28 * 4];
+    unsigned char video_packet_temp[9 * 4];
+    unsigned char video_packet_end_temp[9 * 4];
 };
 
 class IO_Set {
