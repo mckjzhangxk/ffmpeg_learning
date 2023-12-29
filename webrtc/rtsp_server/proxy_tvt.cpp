@@ -47,9 +47,16 @@ struct FrameInfo {
     int packet_index;
     int key_frame_idx;
     int header_end;
-
 };
 
+
+struct IdcFrameInfoReg{
+    int idc_frameIndex;
+    uint8_t *idc_frame;
+    int idc_frame_size;
+    int idc_frame_pos;
+    int idc_remain_byte_cnt;
+};
 extern bool receive_data(int recv_fd, char *in_buf, int in_buf_size, int &out_n);
 
 extern bool send_data(int send_fd, char *in_buf, int in_n);
@@ -142,19 +149,20 @@ private:
 
 class ReplaceReader {
 public:
-    int idc_frameIndex;
-    uint8_t *idc_frame;
-    int idc_frame_size;
-    int idc_frame_pos;
-    int idc_remain_byte_cnt;
+//    int idc_frameIndex;
+//    uint8_t *idc_frame;
+//    int idc_frame_size;
+//    int idc_frame_pos;
+//    int idc_remain_byte_cnt;
+    IdcFrameInfoReg m_idc;
     ReplaceReader() : KeyFrameIndex(1) {
         m_source = new RTSPSource(VIDEO_FILENAME);
-        idc_frameIndex = -1;
+        m_idc.idc_frameIndex = -1;
 
-        idc_frame_pos = 0;
-        idc_frame = NULL;
-        idc_frame_size = 0;
-        idc_remain_byte_cnt=0;
+        m_idc.idc_frame_pos = 0;
+        m_idc.idc_frame = NULL;
+        m_idc.idc_frame_size = 0;
+        m_idc.idc_remain_byte_cnt=0;
     }
 
     ~ReplaceReader() {
@@ -163,10 +171,13 @@ public:
     //131108
     int nextPacket(FrameInfo f, char **out_buf, int *out_len) {
         if (f.type == PACKETED) {
-            if (f.key_frame_idx == idc_frameIndex) {
-                char reserverd_bytes[idc_remain_byte_cnt];
-                if (idc_remain_byte_cnt&&f.packet_index==f.packet_size)
-                    memcpy(reserverd_bytes,out_buf[0]+out_len[0]-idc_remain_byte_cnt,idc_remain_byte_cnt);
+            if (f.key_frame_idx == m_idc.idc_frameIndex) {
+                char reserverd_bytes[m_idc.idc_remain_byte_cnt];
+                if (m_idc.idc_remain_byte_cnt&&f.packet_index==f.packet_size){
+                    memcpy(reserverd_bytes,out_buf[0]+out_len[0]-m_idc.idc_remain_byte_cnt,m_idc.idc_remain_byte_cnt);
+//                    memset(reserverd_bytes,2,m_idc.idc_remain_byte_cnt);
+                }
+
 
 
                 int offset = 9 * 4;
@@ -176,38 +187,36 @@ public:
 
                 if (f.packet_index==f.packet_size){
 //                    copy_num=idc_frame_size - idc_frame_pos;
-                    copy_num = out_len[0]-offset-idc_remain_byte_cnt;
-                    if (out_len[0]-offset<copy_num+idc_remain_byte_cnt){
-                        out_buf[0]=(char*)realloc(out_buf[0],offset+copy_num+idc_remain_byte_cnt);
-                        p = out_buf[0] + offset;
-                    }
+                    copy_num = out_len[0]-offset-m_idc.idc_remain_byte_cnt;
                 } else{
                     copy_num = out_len[0]-offset;//需要多少个字节
-                    if (out_len[0]-offset<copy_num){
-                        out_buf[0]=(char*)realloc(out_buf[0],offset+copy_num);
-                        p = out_buf[0] + offset;
-                    }
+                }
+                if (m_idc.idc_frame_pos>=m_idc.idc_frame_size){
+                    memset(p,0,copy_num);
+                } else if (m_idc.idc_frame_pos+copy_num>m_idc.idc_frame_size){
+                    memcpy(p,m_idc.idc_frame_pos + m_idc.idc_frame,m_idc.idc_frame_size - m_idc.idc_frame_pos);
+                    memset(p+m_idc.idc_frame_size - m_idc.idc_frame_pos,0,copy_num-(m_idc.idc_frame_size - m_idc.idc_frame_pos));
+                } else{
+                    memcpy(p, m_idc.idc_frame_pos + m_idc.idc_frame, copy_num);
                 }
 
-                memcpy(p, idc_frame_pos + idc_frame, copy_num);
-                *((int *) &out_buf[0][4 * 5]) = idc_frame_size + 76+idc_remain_byte_cnt;
+//                *((int *) &out_buf[0][4 * 5]) = idc_frame_size + 76+idc_remain_byte_cnt;
 
-                out_len[0]=copy_num+offset;
+//                out_len[0]=copy_num+offset;
 
-                idc_frame_pos += copy_num;
+                m_idc.idc_frame_pos += copy_num;
 
                 if (f.packet_index==f.packet_size){
                     out_buf[0][7*4]=out_buf[0][5*4];
                     out_buf[0][7*4+1]=out_buf[0][5*4+1];
-//                    out_buf[0][7*4+2]=0;
-//
+
                     short l=*((short *)&out_buf[0][5*4]);
                     *((short *)&out_buf[0][1*4])=l+28;
-//                    out_buf[0][1*4+2]=0;
 
-                    out_len[0]+=idc_remain_byte_cnt;
-                    if (idc_remain_byte_cnt)
-                        memcpy(p+copy_num, reserverd_bytes, idc_remain_byte_cnt);
+
+//                    out_len[0]+=idc_remain_byte_cnt;
+                    if (m_idc.idc_remain_byte_cnt)
+                        memcpy(p+copy_num, reserverd_bytes, m_idc.idc_remain_byte_cnt);
                 }
                 return 0;
             } else {
@@ -316,39 +325,42 @@ public:
                 memcpy(p+payload_size, reserverd_bytes, reversed_bytes_cnt);
             free(nalu_output);
         } else if (stop_type = 5) {
-            if (idc_frame) {
-                free(idc_frame);
-                idc_frame = NULL;
-                idc_frame_size = 0;
-                idc_frameIndex=0;
-                idc_frame_pos=0;
-                idc_remain_byte_cnt=0;
+            if (m_idc.idc_frame) {
+                free(m_idc.idc_frame);
+                m_idc.idc_frame = NULL;
+                m_idc.idc_frame_size = 0;
+                m_idc.idc_frameIndex=0;
+                m_idc.idc_frame_pos=0;
+                m_idc.idc_remain_byte_cnt=0;
             }
             int reversed_bytes_cnt=f.length2-76-f.length9;
+//            reversed_bytes_cnt=0;
             int offset = 28 * 4;
             char *p = out_buf[0] + offset;
 
 
-            int payload_size = 4 + nalu_len;//剩余多少个字节
-            payload_size=f.length2-76-reversed_bytes_cnt;
+//            int payload_size = 4 + nalu_len;//剩余多少个字节
+            int payload_size=f.length2-76-reversed_bytes_cnt;
             int copy_num=out_len[0]-offset;
 
-            if (out_len[0]-offset<copy_num){
-                out_buf[0]=(char*)realloc(out_buf[0],offset+copy_num);
-                p = out_buf[0] + offset;
+            if (copy_num<=4+nalu_len){
+                memcpy(p, nalu_output, copy_num);
+            } else{
+                memcpy(p, nalu_output, 4+nalu_len);
+                memset(p+4+nalu_len,0,copy_num-4-nalu_len);
             }
 
-            memcpy(p, nalu_output, copy_num);
             *((int *) &out_buf[0][4 * 5]) = payload_size + 76+reversed_bytes_cnt;
             *((int *) &out_buf[0][4 * 12]) = payload_size + 60+reversed_bytes_cnt;
             *((int *) &out_buf[0][4 * 15]) = payload_size;
 
-            idc_frame_pos = copy_num;
-            idc_frameIndex = f.key_frame_idx;
-            idc_frame = nalu_output;
-            idc_frame_size = payload_size;
-            idc_remain_byte_cnt=reversed_bytes_cnt;
-            out_len[0] = offset + copy_num;
+            m_idc.idc_frame_pos = copy_num;
+            m_idc.idc_frameIndex = f.key_frame_idx;
+            m_idc.idc_frame = nalu_output;
+            m_idc.idc_frame_size = 4+nalu_len;
+            m_idc.idc_remain_byte_cnt=reversed_bytes_cnt;
+
+
 
             long l1=*((long *)&out_buf[0][offset-16]);
 
@@ -659,9 +671,10 @@ public:
                 } else {
 
                     int r = m_replace_reader.nextPacket(frameInfo, &out_buf, &out_len);
-                    FrameInfo f;
-                    parse_frame((unsigned char *)out_buf,out_len,&f);
-                    idr_print(f,out_buf,out_len);
+//                    FrameInfo f;
+//                    parse_frame((unsigned char *)out_buf,out_len,&f);
+//                    idr_print(f,out_buf,out_len);
+
 //                    int a=0;
 //                    if (frameInfo.type==VIDEO_IDR){
 //                        a=28;
