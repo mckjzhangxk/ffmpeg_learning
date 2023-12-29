@@ -160,7 +160,7 @@ public:
     ~ReplaceReader() {
         free(m_source);
     }
-
+    //131108
     int nextPacket(FrameInfo f, char **out_buf, int *out_len) {
         if (f.type == PACKETED) {
             if (f.key_frame_idx == idc_frameIndex) {
@@ -175,13 +175,14 @@ public:
                 int copy_num = -1;
 
                 if (f.packet_index==f.packet_size){
-                    copy_num=idc_frame_size - idc_frame_pos;
+//                    copy_num=idc_frame_size - idc_frame_pos;
+                    copy_num = out_len[0]-offset-idc_remain_byte_cnt;
                     if (out_len[0]-offset<copy_num+idc_remain_byte_cnt){
                         out_buf[0]=(char*)realloc(out_buf[0],offset+copy_num+idc_remain_byte_cnt);
                         p = out_buf[0] + offset;
                     }
                 } else{
-                    copy_num = idc_frame_size/f.packet_size;//需要多少个字节
+                    copy_num = out_len[0]-offset;//需要多少个字节
                     if (out_len[0]-offset<copy_num){
                         out_buf[0]=(char*)realloc(out_buf[0],offset+copy_num);
                         p = out_buf[0] + offset;
@@ -198,6 +199,12 @@ public:
                 if (f.packet_index==f.packet_size){
                     out_buf[0][7*4]=out_buf[0][5*4];
                     out_buf[0][7*4+1]=out_buf[0][5*4+1];
+//                    out_buf[0][7*4+2]=0;
+//
+                    short l=*((short *)&out_buf[0][5*4]);
+                    *((short *)&out_buf[0][1*4])=l+28;
+//                    out_buf[0][1*4+2]=0;
+
                     out_len[0]+=idc_remain_byte_cnt;
                     if (idc_remain_byte_cnt)
                         memcpy(p+copy_num, reserverd_bytes, idc_remain_byte_cnt);
@@ -323,7 +330,8 @@ public:
 
 
             int payload_size = 4 + nalu_len;//剩余多少个字节
-            int copy_num=payload_size/f.packet_size;
+            payload_size=f.length2-76-reversed_bytes_cnt;
+            int copy_num=out_len[0]-offset;
 
             if (out_len[0]-offset<copy_num){
                 out_buf[0]=(char*)realloc(out_buf[0],offset+copy_num);
@@ -608,8 +616,8 @@ public:
                 int r = parse_frame((unsigned char *) out_buf, out_len, &frameInfo);
 
                 if (r == 0 && frameInfo.type == AUDIO) {
-//                    int offset = 21 * 4;
-//                    pcmSource->read((unsigned char *) (out_buf + offset), out_len - offset);
+                    int offset = 21 * 4;
+                    pcmSource->read((unsigned char *) (out_buf + offset), out_len - offset);
 
                 }
                 ////////////////////////普通视频///////////////////////
@@ -651,25 +659,25 @@ public:
                 } else {
 
                     int r = m_replace_reader.nextPacket(frameInfo, &out_buf, &out_len);
-//                    FrameInfo f;
-//                    parse_frame((unsigned char *)out_buf,out_len,&f);
-//                    idr_print(f,out_buf,out_len);
-                    int a=0;
-                    if (frameInfo.type==VIDEO_IDR){
-                        a=28;
-                    } else if (frameInfo.type==VIDEO){
-                        a=21;
-                    } else if(frameInfo.type==PACKETED){
-                        a=9;
-                    }
-                    for (int i = 0; i < 4*a; i+=4) {
-                        printf("%02x %02x %02x %02x\n",
-                               (unsigned char )out_buf[i],
-                               (unsigned char )out_buf[i+1],
-                               (unsigned char )out_buf[i+2],
-                               (unsigned char )out_buf[i+3]);
-                    }
-                    printf("---------\n");
+                    FrameInfo f;
+                    parse_frame((unsigned char *)out_buf,out_len,&f);
+                    idr_print(f,out_buf,out_len);
+//                    int a=0;
+//                    if (frameInfo.type==VIDEO_IDR){
+//                        a=28;
+//                    } else if (frameInfo.type==VIDEO){
+//                        a=21;
+//                    } else if(frameInfo.type==PACKETED){
+//                        a=9;
+//                    }
+//                    for (int i = 0; i < 4*a; i+=4) {
+//                        printf("%02x %02x %02x %02x\n",
+//                               (unsigned char )out_buf[i],
+//                               (unsigned char )out_buf[i+1],
+//                               (unsigned char )out_buf[i+2],
+//                               (unsigned char )out_buf[i+3]);
+//                    }
+//                    printf("---------\n");
 //                    printf("%d\n",r);
 //                    int offset=0;
 //                    switch (frameInfo.type) {
@@ -1020,7 +1028,7 @@ public:
     //fd是要发生数据的一端
     bool handle(int fd, char *buf, int n) {
 
-//        fwrite(buf, 1, n, m_record_file);
+        fwrite(buf, 1, n, m_record_file);
         int r = frame_reader.write(fd, buf, n);
         if (r < 0) {
             fprintf(stderr, "frame_reader.write error\n");
