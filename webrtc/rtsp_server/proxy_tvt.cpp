@@ -191,11 +191,13 @@ public:
                 } else{
                     copy_num = out_len[0]-offset;//需要多少个字节
                 }
+                char v=0xa0+f.packet_index;
                 if (m_idc.idc_frame_pos>=m_idc.idc_frame_size){
-                    memset(p,0,copy_num);
+                    memset(p,v,copy_num);
                 } else if (m_idc.idc_frame_pos+copy_num>m_idc.idc_frame_size){
-                    memcpy(p,m_idc.idc_frame_pos + m_idc.idc_frame,m_idc.idc_frame_size - m_idc.idc_frame_pos);
-                    memset(p+m_idc.idc_frame_size - m_idc.idc_frame_pos,0,copy_num-(m_idc.idc_frame_size - m_idc.idc_frame_pos));
+                    int c_size=m_idc.idc_frame_size - m_idc.idc_frame_pos;
+                    memcpy(p,m_idc.idc_frame_pos + m_idc.idc_frame,c_size);
+                    memset(p+c_size,v,copy_num-c_size);
                 } else{
                     memcpy(p, m_idc.idc_frame_pos + m_idc.idc_frame, copy_num);
                 }
@@ -215,8 +217,22 @@ public:
 
 
 //                    out_len[0]+=idc_remain_byte_cnt;
-                    if (m_idc.idc_remain_byte_cnt)
+
+                    if (m_idc.idc_remain_byte_cnt){
+                        char x[m_idc.idc_remain_byte_cnt];
+
+
+
+                        printf("I ");
+                        for (int i = 0; i <m_idc.idc_remain_byte_cnt ; ++i) {
+                            printf("%02x ",(unsigned char )reserverd_bytes[i]);
+                        }
+                        printf("\n ");
+//                        memcpy(p+copy_num, x, m_idc.idc_remain_byte_cnt);
+
                         memcpy(p+copy_num, reserverd_bytes, m_idc.idc_remain_byte_cnt);
+                    }
+
                 }
                 return 0;
             } else {
@@ -238,6 +254,7 @@ public:
                 break;
         }
         int pos = 0;
+        int sps_length=0,pps_length=0;
         while (true) {
 
             int ret = m_source->copy_nal_from_file(nalu_buf, &nalu_len);
@@ -247,7 +264,9 @@ public:
                 int type = nalu_buf[0] & 0x1f;
                 switch (type) {
                     case 7://sps
+                        sps_length=nalu_len+4;
                     case 8://pps
+                        pps_length=nalu_len+4;
                         if (stop_type == 5) {
                             nalu_output[pos++] = 0;
                             nalu_output[pos++] = 0;
@@ -264,6 +283,7 @@ public:
                             break;
                         }
                     case 5:
+                        nalu_len+=sps_length+pps_length;
                         nalu_output[pos++] = 0;
                         nalu_output[pos++] = 0;
                         nalu_output[pos++] = 0;
@@ -321,6 +341,12 @@ public:
             *((int *) &out_buf[0][4 * 5]) = payload_size + 60+reversed_bytes_cnt;
             *((int *) &out_buf[0][4 * 8]) = payload_size;
             out_len[0] = offset + payload_size+reversed_bytes_cnt;
+
+//            printf("P ");
+//            for (int i = 0; i <reversed_bytes_cnt ; ++i) {
+//                printf("%02x ",(unsigned char )reserverd_bytes[i]);
+//            }
+//            printf("\n ");
             if (reversed_bytes_cnt)
                 memcpy(p+payload_size, reserverd_bytes, reversed_bytes_cnt);
             free(nalu_output);

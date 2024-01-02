@@ -22,10 +22,10 @@ gclient sync
 ## 编译
 ```sh
 #gn相当于cmake
-gn gen out/Default
-gn clean out/Default
-gn args --list out/Default
-gn args out/Default --list= is_debug
+gn gen out/Default #产生编译脚本
+gn clean out/Default #清理
+gn args --list out/Default #查看全部的gn参数
+gn args out/Default --list= is_debug #
 
 #ninja相当于make
 ninja -C out/Default
