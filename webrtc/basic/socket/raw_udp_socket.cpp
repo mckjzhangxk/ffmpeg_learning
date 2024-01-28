@@ -17,6 +17,152 @@ using std::cout;
 using std::cerr;
 using std::endl;
 
+
+static uint32_t x, y, z, w;
+
+void rand_init(void)
+{
+    x = time(NULL);
+    y = getpid() ^ getppid();
+    z = clock();
+    w = z ^ y;
+}
+//生成一个随机数
+uint32_t rand_next(void) //period 2^96-1
+{
+    uint32_t t = x;
+    t ^= t << 11;
+    t ^= t >> 8;
+    x = y; y = z; z = w;
+    w ^= w >> 19;
+    w ^= t;
+    return w;
+}
+
+void rand_str(char *str, int len) // Generate random buffer (not alphanumeric!) of length len
+{
+    while (len > 0)
+    {
+        if (len >= 4)
+        {
+            *((uint32_t *)str) = rand_next();
+            str += sizeof (uint32_t);
+            len -= sizeof (uint32_t);
+        }
+        else if (len >= 2)
+        {
+            *((uint16_t *)str) = rand_next() & 0xFFFF;
+            str += sizeof (uint16_t);
+            len -= sizeof (uint16_t);
+        }
+        else
+        {
+            *str++ = rand_next() & 0xFF;
+            len--;
+        }
+    }
+}
+
+void rand_alphastr(uint8_t *str, int len) // Random alphanumeric string, more expensive than rand_str
+{
+    const char alphaset[] = "abcdefghijklmnopqrstuvw012345678";
+
+    while (len > 0)
+    {
+        if (len >= sizeof (uint32_t))
+        {
+            int i;
+            uint32_t entropy = rand_next();
+
+            for (i = 0; i < sizeof (uint32_t); i++)
+            {
+                uint8_t tmp = entropy & 0xff;
+
+                entropy = entropy >> 8;
+                tmp = tmp >> 3;
+
+                *str++ = alphaset[tmp];
+            }
+            len -= sizeof (uint32_t);
+        }
+        else
+        {
+            *str++ = rand_next() % (sizeof (alphaset));
+            len--;
+        }
+    }
+}
+
+struct DnsHeader {
+    uint16_t id;
+    uint16_t opts;      //一些选项，其中最重要的是第八位，表示是否recurisive查询
+    uint16_t qdcount;   //query record 的数目
+    uint16_t ancount;   //answer record 的数目
+    uint16_t nscount;   //nameserver record 的数目
+    uint16_t arcount;   //additonal record 的数目
+};
+
+//对于一个Resource Record，有如下字段
+//name [TTL] [class] type rdata
+struct DnsQuestion {
+    uint16_t qtype;     //query type,1-A 类型查询
+    uint16_t qclass;    //1-Internet
+};
+
+
+void create_dns_packet(char* domain_name,
+                       int data_len,
+                       char *out_packet,
+                       size_t &out_packet_len){
+    memset(out_packet,0,out_packet_len);
+    struct DnsHeader* dnsHeader=(struct DnsHeader* )out_packet;
+    int domain_len= strlen(domain_name);
+
+
+    dnsHeader->id=rand_next() & 0xffff; //rand id
+    dnsHeader->opts= htons(1<<8); // Recursion desired
+    dnsHeader->qdcount= htons(1);
+
+
+    char *qname=(char *)(dnsHeader+1);
+
+    if (data_len){
+        *qname=data_len;
+        qname++;
+        rand_alphastr((uint8_t *)qname, data_len);
+        qname+=data_len;
+    }
+
+
+    //random str  to qname[1:data_len+1]
+
+//    qname++;
+
+    strcpy(qname+1,domain_name);
+
+    char * curr_lbl=qname;
+    int curr_word_len=0;
+    for (int ii = 0; ii < domain_len; ii++)
+    {
+        if (domain_name[ii] == '.')
+        {
+            *curr_lbl = curr_word_len;
+            curr_word_len = 0;
+            curr_lbl = qname + ii + 1;//ii是表示.在domain的位置， 感觉是应该+2
+        }
+        else
+            curr_word_len++;
+    }
+    *curr_lbl = curr_word_len;
+
+    struct DnsQuestion* dnsQuestion=(struct DnsQuestion* )(qname+domain_len+1+1);
+    dnsQuestion->qtype=htons(1);
+    dnsQuestion->qclass=htons(1);
+
+    //第一个1是domain_name的\0,第二个1是domain_name之前的那个长度
+    out_packet_len=sizeof(struct DnsHeader)+sizeof(struct DnsQuestion)+(domain_len+1+1) +(data_len+1);
+}
+
 //生成ip的校验和,ip只会校验ip header,因为ttl每次经过路由都会变化
 //所以这个数值也是变化的
 uint16_t checksum_generic(uint16_t *addr, uint32_t count) {
@@ -41,10 +187,15 @@ uint16_t checksum_generic(uint16_t *addr, uint32_t count) {
 // 4.desip
 // 5.protocal
 // 6.udp数据包长度:注意这里是大端模式
+
+//iph:是为了获得伪srcip.dstip,proto
+//buff: udp的数据包
+//buff_len: udp数据包长度(包括udp header)
+//data_len:  udp数据包长度(包括udp header) 的大端表示
 uint16_t checksum_tcpudp(struct ip *iph, void *buff, int buff_len, uint16_t data_len) {
     const uint16_t *buf = (const uint16_t *) buff;
-    uint32_t ip_src = iph->ip_src.s_addr;
-    uint32_t ip_dst = iph->ip_dst.s_addr;
+    uint32_t ip_src = iph->ip_src.s_addr;//伪ip目的地址
+    uint32_t ip_dst = iph->ip_dst.s_addr;//伪ip源地址
     uint32_t sum = 0;
 
     while (buff_len > 1) {
@@ -61,7 +212,7 @@ uint16_t checksum_tcpudp(struct ip *iph, void *buff, int buff_len, uint16_t data
     sum += (ip_dst >> 16) & 0xFFFF;
     sum += ip_dst & 0xFFFF;
     sum += htons(iph->ip_p); //这里是大端  0x11 0x00
-    sum += data_len;
+    sum += data_len;//传入的必须是大端
 
     while (sum >> 16)
         sum = (sum & 0xFFFF) + (sum >> 16);
@@ -139,7 +290,6 @@ void create_tcp_packet(
 
     ///tcp header
 #ifdef __linux__
-
     tcphdr->source=src_addr.sin_port;
     tcphdr->dest=dst_addr.sin_port;
     tcphdr->seq= htons(0);
@@ -223,8 +373,8 @@ void create_udp_packet(
 
     //4 bytes
     ipheader->ip_v = 4;
-    ipheader->ip_hl = 5;//但是4个bytes
-    ipheader->ip_tos = 0;//??
+    ipheader->ip_hl = 20>>2;//但是4个bytes
+    ipheader->ip_tos = 0;//type of service
     ipheader->ip_len = htons(out_packet_len);
 
     //4 bytes
@@ -273,25 +423,37 @@ void create_udp_packet(
  *
  * */
 int main() {
+    rand_init();
+
+    char dns_packet[512];
+    size_t dns_size=sizeof(dns_packet);
+    create_dns_packet("www.stanford.edu",0,dns_packet,dns_size);
+
     int sockfd = open_connect_fd();
     struct sockaddr_in src_addr, dst_addr;
 
     src_addr.sin_family = AF_INET;
     src_addr.sin_port = htons(1234);
-    inet_aton("192.168.126.99", &src_addr.sin_addr);
+    inet_aton("192.168.126.239", &src_addr.sin_addr);
 
     dst_addr.sin_family = AF_INET;
-    dst_addr.sin_port = htons(8888);
-    inet_aton("192.168.126.239", &dst_addr.sin_addr);
+    dst_addr.sin_port = htons(53);
+    inet_aton("8.8.8.8", &dst_addr.sin_addr);
 
-
-    char data[] = "hello world";
     char *packet;
     int packsize;
-    create_tcp_packet(src_addr, dst_addr, packet, packsize);
-
-    create_udp_packet(src_addr, dst_addr, data, strlen(data), packet, packsize);
+    create_udp_packet(src_addr, dst_addr, dns_packet, dns_size, packet, packsize);
     int n = sendto(sockfd, packet, packsize, MSG_NOSIGNAL, (struct sockaddr *) &dst_addr, sizeof(dst_addr));
     cout << n << endl;
     close(sockfd);
+
+//    char data[] = "hello world";
+//    char *packet;
+//    int packsize;
+//    create_tcp_packet(src_addr, dst_addr, packet, packsize);
+//
+//    create_udp_packet(src_addr, dst_addr, data, strlen(data), packet, packsize);
+//    int n = sendto(sockfd, packet, packsize, MSG_NOSIGNAL, (struct sockaddr *) &dst_addr, sizeof(dst_addr));
+//    cout << n << endl;
+//    close(sockfd);
 }

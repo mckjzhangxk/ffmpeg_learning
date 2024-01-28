@@ -22,8 +22,10 @@ openssl x509 -in ca.crt -text -noout
 
 ## TLS(>SSL3.0)协议
 - 基于TCP协议的
-- TLS握手协议，交换证书，算法套件。
-- TLS记录协议，用握手交换的信息加密信息，并传输。
+- <font color=red>TLS握手协议</font>，交换证书，算法套件。
+- - 密码规格变更协议: TLS Change Ciper Spec Protocal
+- - 警告协议：TLS Alert Protocal
+- <font color=red>TLS记录协议</font>，用握手交换的信息加密信息，并传输。
 ## OpenSSL原理
 - 开源的ssl(security sockets layer)， 实现了TLS,DTLS
 - SSL_CONTEXT： 保存【TLS握手协议】的信息
@@ -36,9 +38,9 @@ openssl x509 -in ca.crt -text -noout
 - 基于UDP协议的
 ![Alt text](imgs/dtls.png)
 
-- 客户端发起hello
+- 客户端发起hello(对于TLS，携带所支持的全部加密算法，AES,RSA,ECDSA。。。)
 - 服务端回复server hello,发送服务端证书，key,并要求客户端也发生他的证书。
-- 客户端验证服务的的证书后，把他的证书，key发送给服务器，同时发送锁支持的【算法套件】。
+- 客户端验证服务的的证书后，把他的证书，key发送给服务器，同时发送所支持的【算法套件】。
 - 服务端 协商【算法套件】，结果告诉客户端,我理解这里的【算法套件】是对称算法，如AES
 ## webrtc的 连接建立
 ![Alt text](imgs/dtls2.png)

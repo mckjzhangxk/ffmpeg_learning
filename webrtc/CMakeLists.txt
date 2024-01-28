@@ -93,3 +93,6 @@ add_executable(proxy_tvt rtsp_server/network_io.cpp rtsp_server/proxy_tvt.cpp)
 
 
 add_executable(getopt_tutorial basic/filesystem/getopt_tutorial.cpp)
+
+add_executable(http basic/http/http.c)
+

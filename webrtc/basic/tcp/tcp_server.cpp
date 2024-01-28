@@ -70,7 +70,7 @@ int open_listen_fd(){
 void echo(int accept_fd){
     char in_buf[MESSAGE_SIZE] = {0,};
 
-    while (true){
+    while (1){
         memset(in_buf, 0, MESSAGE_SIZE);
         //一直阻塞，直到新数据或者对端关闭？
         int n = recv(accept_fd ,&in_buf, MESSAGE_SIZE, 0);
@@ -97,7 +97,7 @@ int main(){
     int socket_fd=open_listen_fd();
 
     //////////////////////////////接受连接///////////////////////////
-    while (true){
+    while (1){
         socklen_t addr_len = sizeof( struct sockaddr_in );
 
         //accept an new connection, block......

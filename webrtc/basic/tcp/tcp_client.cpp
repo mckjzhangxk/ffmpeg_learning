@@ -34,6 +34,7 @@ int open_connect_fd(const char* remoteIp,int remotePort){
         exit(1);
     }
 
+
     //////////////////////////////连接服务器///////////////////////////
     struct sockaddr_in addr;
     addr.sin_family     = AF_INET;
