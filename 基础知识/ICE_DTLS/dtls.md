@@ -37,11 +37,13 @@ openssl x509 -in ca.crt -text -noout
 ## DTLS握手协议
 - 基于UDP协议的
 ![Alt text](imgs/dtls.png)
-
+- 绿色的框是handshake过程，目的是【密钥协商】。
 - 客户端发起hello(对于TLS，携带所支持的全部加密算法，AES,RSA,ECDSA。。。)
-- 服务端回复server hello,发送服务端证书，key,并要求客户端也发生他的证书。
-- 客户端验证服务的的证书后，把他的证书，key发送给服务器，同时发送所支持的【算法套件】。
+- 服务端回复（server hello消息）,发送服务端证书(Certificate消息)，ServerkeyExchange消息（协商公钥）,并要求客户端也发生他的证书（可选）。
+- 客户端验证服务的的证书后，把他的证书（可选），ClientKeyExchange消息（协商公钥）发送给服务器。
 - 服务端 协商【算法套件】，结果告诉客户端,我理解这里的【算法套件】是对称算法，如AES
+- 上图的画的TLS1.2版本，TLS1.3有所简化，其中ServerKeyExchange,ClientKeyExchange是交换对称密钥的过程。
+
 ## webrtc的 连接建立
 ![Alt text](imgs/dtls2.png)
 

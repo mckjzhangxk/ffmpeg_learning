@@ -94,11 +94,18 @@ openssl sha256  -verify pub.pem -signature message.sha256.sig message
 ```
 # 证书
 - <font color=pink>把 (pubkey,组织信息，有效时间,摘要算法)做个摘要，使用ca机构的 私钥对摘要做【签名】，生成的数据 是证书</font>
-- 证书其实应该是明文的
+- <font color=red>证书其实是明文的</font>
 - 客户端通过浏览器内置的 ca的公钥(证书)，验证证书有消息：做法：
 - - ca的公钥 解密 【签名】，得到 摘要 d1
 - - 对证书(除签名)部分 使用摘要算法，算出d2
 - - 判断 d1==d2
+```sh
+#把 pem证书转换成  der证书
+openssl x509 -in cert.pem -out cert.der -outform DER
+
+#查看证书
+openssl x509 -in ca.crt -text -noout
+```
 # 加密解密Confidentinal
 ## 生成key的方法
 ```sh
@@ -137,6 +144,7 @@ openssl rsa -aes-256-cbc  -in key.pem.enc  -pubout -out pub.pem.enc
 ```SH
 
 # PEM转DER,PEM是base64格式，DER是二进制格式
+# PEM是 base64 加上（BEGIN XXX END XXX),解码后就是DER！！！
 openssl rsa -in key.pem -out key.der -outform DER
 openssl rsa -in pub.pem -pubin -out pub.der -outform DER
 # 查看DER
