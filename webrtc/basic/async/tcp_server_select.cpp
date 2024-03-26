@@ -93,7 +93,6 @@ struct IO_Set {
     int server_fd;
     int client_fds[FD_SIZE];
     int client_num;
-
 };
 
 void init_io_set(IO_Set &ioSet, int listenFd) {

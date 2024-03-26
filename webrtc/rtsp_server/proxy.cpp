@@ -17,8 +17,8 @@
 #define FD_SIZE 2
 #define NAL_BUF_SIZE                1500 * 250
 #define FILENAME "/Users/zhanggxk/Desktop/测试视频/my.h265"
-//#define RTSP_VIDEO_IP "114.34.141.233"
-#define RTSP_VIDEO_IP "1.226.190.115"
+#define RTSP_VIDEO_IP "114.34.141.233"
+//#define RTSP_VIDEO_IP "1.226.190.115"
 #define RTSP_VIDEO_PORT 6036
 #define RSTP_INTERLEAVE_SIZE 4
 

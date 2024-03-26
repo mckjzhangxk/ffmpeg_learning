@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <signal.h>
+#include <arpa/inet.h>
 #ifdef __linux__
 #include <wait.h>
 #endif
@@ -20,7 +21,7 @@ void sigint_handler(int sig) /* SIGINT handler */
     }
 }
 
-int open_listen_fd(){
+int open_listen_fd(const char* bind_ip,const char* bind_port){
     
     //////////////////////////////创建套接字///////////////////////////
     //1.创建套接字
@@ -46,8 +47,9 @@ int open_listen_fd(){
     //set local address
     struct sockaddr_in local_addr;
     local_addr.sin_family = AF_INET;
-    local_addr.sin_port = htons(8888);
-    local_addr.sin_addr.s_addr = INADDR_ANY;//0.0.0.0
+    local_addr.sin_port = htons(atoi(bind_port));
+    inet_aton(bind_ip,&local_addr.sin_addr );
+//    local_addr.sin_addr.s_addr = INADDR_ANY;//0.0.0.0
     bzero(&(local_addr.sin_zero), 8);
 
     //bind socket
@@ -94,7 +96,7 @@ void echo(int accept_fd){
 int main(){
     signal(SIGCHLD, sigint_handler);
 
-    int socket_fd=open_listen_fd();
+    int socket_fd=open_listen_fd("127.0.0.1","8888");
 
     //////////////////////////////接受连接///////////////////////////
     while (1){

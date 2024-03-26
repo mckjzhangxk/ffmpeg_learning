@@ -14,6 +14,16 @@ include_directories(/Users/zhanggxk/project/bin/libcurl/include)
 link_directories(/Users/zhanggxk/project/bin/libcurl/lib)
 
 
+#libssh
+include_directories(/Users/zhanggxk/Downloads/libssh-0.10.0/build/aaa/include)
+link_directories(/Users/zhanggxk/Downloads/libssh-0.10.0/build/aaa/lib)
+link_directories(/Users/zhanggxk/Desktop/grass/bot/deps/mbedtls/build/library)
+
+
+#openssl
+include_directories(/opt/homebrew/opt/openssl/include)
+link_directories(/opt/homebrew/opt/openssl/lib)
+
 set(CMAKE_CXX_STANDARD 11)
 
 add_executable(webrtc main.cpp
@@ -35,6 +45,7 @@ add_executable(udp_server basic/tcp/udp_server.cpp)
 add_executable(udp_client basic/tcp/udp_client.cpp)
 add_executable(raw_udp_socket basic/socket/raw_udp_socket.cpp)
 
+add_executable(net_interface basic/tcp/net_interface.c)
 
 #异步IO复用
 add_executable(tcp_servver_select basic/async/tcp_server_select.cpp)
@@ -83,6 +94,10 @@ target_link_libraries(server cppcms)
 add_executable(curl_tutorial libcurl_tutorial/curl_tutorial.cpp)
 target_link_libraries(curl_tutorial curl)
 
+
+add_executable(ssh_tutorial libssh_tutorial/ssh_tutorial.c)
+target_link_libraries(ssh_tutorial mbedx509 mbedcrypto mbedtls gssapi_krb5 ssh )
+
 #rtsp 插播
 add_executable(socket_pair basic/pipe/socketpair_demo.cpp)
 add_executable(rtsp_server rtsp_server/rtsp_server.cpp)
@@ -96,3 +111,7 @@ add_executable(getopt_tutorial basic/filesystem/getopt_tutorial.cpp)
 
 add_executable(http basic/http/http.c)
 
+
+
+add_executable(tls_openssl_tutorial libssh_tutorial/tls_openssl_tutorial.c)
+target_link_libraries(tls_openssl_tutorial crypto ssl)
